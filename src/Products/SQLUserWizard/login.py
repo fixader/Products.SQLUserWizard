@@ -2,6 +2,7 @@ from AccessControl import ClassSecurityInfo
 from AuthEncoding import pw_validate
 from AccessControl.Permissions import view
 from OFS.SimpleItem import SimpleItem
+from Products.PluggableAuthService.interfaces.plugins import IAuthenticationPlugin
 from urllib.parse import urlencode
 
 from .compat import InitializeClass
@@ -44,7 +45,13 @@ class SQLUserLoginSubmit(SimpleItem):
 
         pas = getattr(self.aq_parent, self.pas_id)
         plugin = getattr(pas, self.plugin_id)
-        status = self._check_credentials(plugin, login, password, REQUEST.get("otp_code", ""))
+        status = self._check_credentials(
+            plugin,
+            login,
+            password,
+            REQUEST.get("otp_code", ""),
+            pas=pas,
+        )
         if status == "enroll":
             pas.updateCredentials(REQUEST, response, login, password)
             query = urlencode({"came_from": came_from})
@@ -65,7 +72,7 @@ class SQLUserLoginSubmit(SimpleItem):
         response.redirect(came_from)
         return ""
 
-    def _check_credentials(self, plugin, login, password, otp_code):
+    def _check_credentials(self, plugin, login, password, otp_code, pas=None):
         if not login or not password:
             return "credentials"
 
@@ -89,7 +96,36 @@ class SQLUserLoginSubmit(SimpleItem):
                 return "enroll"
             return "ok"
 
+        if self._check_pas_fallback_credentials(pas, plugin, login, password):
+            return "ok"
+
         return "credentials"
+
+    def _check_pas_fallback_credentials(self, pas, sql_plugin, login, password):
+        if pas is None:
+            return False
+
+        credentials = {"login": login, "password": password}
+        try:
+            plugins = pas.plugins.listPlugins(IAuthenticationPlugin)
+        except Exception:
+            return False
+
+        sql_plugin_base = getattr(sql_plugin, "aq_base", sql_plugin)
+        for _plugin_id, candidate in plugins:
+            candidate_base = getattr(candidate, "aq_base", candidate)
+            if candidate_base is sql_plugin_base:
+                continue
+            authenticate = getattr(candidate, "authenticateCredentials", None)
+            if authenticate is None:
+                continue
+            try:
+                result = authenticate(credentials)
+            except Exception:
+                continue
+            if result:
+                return True
+        return False
 
     def _password_matches(self, user, password):
         password_hash_id = getattr(user, "password_hash_id", "") or "plain"

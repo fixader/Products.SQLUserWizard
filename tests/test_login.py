@@ -94,6 +94,39 @@ def test_login_submit_keeps_bad_password_generic():
     assert helper._check_credentials(plugin, "alice", "wrong", "000000") == "credentials"
 
 
+def test_login_submit_accepts_pas_fallback_authentication():
+    class FallbackPlugin:
+        def authenticateCredentials(self, credentials):
+            if credentials == {"login": "admin", "password": "admin"}:
+                return ("admin", "admin")
+            return None
+
+    class PluginRegistry:
+        def listPlugins(self, interface):
+            return [
+                ("sql_auth", sql_plugin),
+                ("zodb_fallback_users", fallback_plugin),
+            ]
+
+    class FakePas:
+        plugins = PluginRegistry()
+
+    helper = SQLUserLoginSubmit()
+    sql_plugin = FakePlugin(None)
+    fallback_plugin = FallbackPlugin()
+
+    assert (
+        helper._check_credentials(
+            sql_plugin,
+            "admin",
+            "admin",
+            "",
+            pas=FakePas(),
+        )
+        == "ok"
+    )
+
+
 def test_login_submit_carries_came_from_to_enrollment_page():
     class FakeRequest(dict):
         def __getattr__(self, name):
