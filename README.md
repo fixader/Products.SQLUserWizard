@@ -3,6 +3,31 @@
 Prototype Zope product for configuring a local PAS user folder backed by SQL
 through Z SQL Methods.
 
+## Features
+
+- installs or repairs a local `acl_users` Pluggable Auth Service in a Zope
+  folder
+- authenticates users through generated Z SQL Methods, so the database adapter
+  can be OpenODBCDA, SQLAlchemyDA, or another Zope adapter that supports
+  Z SQL Methods
+- supports managed SQL schemas for PostgreSQL, SQLite, MySQL/MariaDB,
+  Microsoft SQL Server, Oracle 11g-style SQL, and Oracle 12c+ SQL
+- supports read-only auth-only proof mode for existing Zope-style PostgreSQL
+  and Oracle user/role tables
+- installs form/cookie login, logout, secure test page, SQL user admin, and a
+  manager-readable status page
+- supports password hashes through Zope `AuthEncoding`, with plain-password
+  fallback for legacy/testing databases
+- supports optional per-user TOTP authenticator 2FA, including QR-code setup,
+  enrollment-required flow, and self-service activation
+- provides fallback ZODB users by syncing readable parent-folder users, plus an
+  optional break-glass manager account
+- keeps editable profile fields separate from security-sensitive user fields
+- leaves a manifest and information page so the installed setup is inspectable
+  after the wizard has run
+- includes preflight guidance before install/repair to avoid confusing
+  authentication data, profile fields, and application-only data
+
 ## Why this exists
 
 Zope has powerful building blocks for authentication. PAS can be extended,
