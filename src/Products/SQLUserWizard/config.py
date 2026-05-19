@@ -323,7 +323,7 @@ order by u.login_name""",
 def auth_only_templates(dialect="existing_postgresql", tables=None):
     tables = tables or DEFAULT_TABLES
     users = tables["users"]
-    roles = tables["roles"]
+    user_roles = tables["user_roles"]
 
     if dialect == "existing_oracle":
         fetch_user_template = f"""select
@@ -340,7 +340,7 @@ from {users}
 where lower(username) = lower(<dtml-sqlvar login type=string>)
   and rownum = 1"""
         fetch_roles_template = f"""select role
-from {roles}
+from {user_roles}
 where lower(username) = lower(<dtml-sqlvar user_id type=string>)
 order by role"""
         get_profile_template = f"""select
@@ -368,7 +368,7 @@ from {users}
 where lower(username) = lower(<dtml-sqlvar login type=string>)
 limit 1"""
         fetch_roles_template = f"""select role
-from {roles}
+from {user_roles}
 where lower(username) = lower(<dtml-sqlvar user_id type=string>)
 order by role"""
         get_profile_template = f"""select

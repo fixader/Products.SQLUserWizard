@@ -91,8 +91,8 @@ def test_existing_auth_only_templates_are_read_only():
         {
             "users": "users",
             "profiles": "ignored_profiles",
-            "roles": "roles",
-            "user_roles": "ignored_user_roles",
+            "roles": "ignored_role_catalog",
+            "user_roles": "roles",
         },
     )
 
@@ -100,6 +100,7 @@ def test_existing_auth_only_templates_are_read_only():
     combined = "\n".join(spec["template"].lower() for spec in templates.values())
     assert "from users" in combined
     assert "from roles" in combined
+    assert "ignored_role_catalog" not in combined
     assert "insert " not in combined
     assert "update " not in combined
     assert "delete " not in combined
