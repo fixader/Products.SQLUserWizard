@@ -228,5 +228,3 @@ break-glass user. It is useful for installations that want a dedicated
 recovery account, but it is not required when parent admin users can be
 synced. User folders that do not expose readable password hashes are reported
 as warnings.
-
-This is a first product skeleton extracted from the `/PASLab` prototype.
