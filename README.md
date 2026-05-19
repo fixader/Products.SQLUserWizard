@@ -3,6 +3,15 @@
 Prototype Zope product for configuring a local PAS user folder backed by SQL
 through Z SQL Methods.
 
+## Development status
+
+This is an early product version extracted from lab work on Zope 5 and Zope 6.
+It is usable enough for controlled testing, review, and further development,
+but it should still be treated as a product in active development.
+
+Verified combinations, known gaps, and migration boundaries are tracked in
+[Current Status](docs/status.md).
+
 ## Features
 
 - installs or repairs a local `acl_users` Pluggable Auth Service in a Zope
