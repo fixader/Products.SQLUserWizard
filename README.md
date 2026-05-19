@@ -12,6 +12,54 @@ but it should still be treated as a product in active development.
 Verified combinations, known gaps, and migration boundaries are tracked in
 [Current Status](docs/status.md).
 
+## Installation
+
+The current package version is `0.1.0a1`. The `a1` suffix is deliberate: this
+is an alpha release line, ready for controlled use in new/lab installations,
+but still expected to change as more Zope 5 and Zope 6 installations are tested.
+
+The safest first use is a clean/new application folder with a database adapter
+already available through acquisition or created in that folder. Managed mode
+can then create its own `pas_users`, `pas_user_profiles`,
+`pas_roles_catalog`, and `pas_user_roles` tables and install the PAS objects,
+login form, user admin, 2FA flow, profile tools, fallback users, status page,
+and manifest.
+
+Existing applications should start with `auth_only` mode and a snapshot or
+database backup. Auth-only is read-only and proves that login, password
+format, role lookup, SQL dialect, and adapter choice work before the wizard is
+allowed to alter or maintain tables. Only switch to managed/take-control mode
+after the security/profile/application-data split is understood.
+
+Editable install from a checkout:
+
+```bash
+git clone https://github.com/fixader/Products.SQLUserWizard.git
+cd Products.SQLUserWizard
+pip install -e .
+```
+
+Direct install from GitHub:
+
+```bash
+pip install "Products.SQLUserWizard @ git+https://github.com/fixader/Products.SQLUserWizard.git@main"
+```
+
+For a private repository, Git must already be authenticated to GitHub on the
+machine running `pip`.
+
+Buildout-style Zope 5 installations can keep using a `develop` checkout or run
+`pip install -e /path/to/Products.SQLUserWizard` inside the instance virtual
+environment. The repository keeps both `pyproject.toml` and `setup.py` because
+older buildout workflows still expect `setup.py`.
+
+Runtime dependencies:
+
+- `Zope>=5.0`
+- `Products.PluggableAuthService>=2.0`
+- `Products.ZSQLMethods`
+- `segno` for QR-code generation in the TOTP setup flow
+
 ## Features
 
 - installs or repairs a local `acl_users` Pluggable Auth Service in a Zope

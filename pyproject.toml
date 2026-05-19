@@ -4,19 +4,33 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "Products.SQLUserWizard"
-version = "0.1.0"
+version = "0.1.0a1"
 description = "A Zope wizard that configures PAS SQL users through Z SQL Methods."
 readme = "README.md"
-requires-python = ">=3.10"
-license = {text = "ZPL-2.1"}
+requires-python = ">=3.8"
+license = {text = "MIT"}
 authors = [
   {name = "SQL User Wizard contributors"}
 ]
 dependencies = [
-  "Zope>=6.1",
-  "Products.PluggableAuthService>=4.1",
+  "Zope>=5.0",
+  "Products.PluggableAuthService>=2.0",
   "Products.ZSQLMethods",
   "segno",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Framework :: Zope",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Internet :: WWW/HTTP :: WSGI",
 ]
 
 [project.optional-dependencies]
