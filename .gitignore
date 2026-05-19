@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Local deployment/test artifacts
+*.tar.gz
+README.preview.html
+*.cookie.txt
+cookiejar.txt
+remote_cookiejar.txt
+*_cookie.txt
+afterlogout.txt
+badcookiejar.txt
+
+# Historical lab exports are useful locally, but should not be part of the
+# product repository.
+zope_snapshot/
