@@ -515,18 +515,18 @@ class SQLUserWizardInstaller:
             except Exception:
                 continue
             if value:
-                return str(value)
+                return self._password_text(value)
 
         for attr_name in ("__", "_password", "password"):
             value = getattr(user, attr_name, "")
             if value:
-                return str(value)
+                return self._password_text(value)
 
         passwords = getattr(source, "_user_passwords", None)
         if self._is_mapping_like(passwords):
             value = passwords.get(user_id)
             if value:
-                return str(value)
+                return self._password_text(value)
 
         data = getattr(source, "data", None)
         if self._is_mapping_like(data):
@@ -535,6 +535,11 @@ class SQLUserWizardInstaller:
                 return self._stored_password(source, stored_user, user_id)
 
         return ""
+
+    def _password_text(self, value):
+        if isinstance(value, bytes):
+            return value.decode("ascii")
+        return str(value)
 
     def _upsert_fallback_user_with_hash(self, users, user_id, login, password_hash):
         try:

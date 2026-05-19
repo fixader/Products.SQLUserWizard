@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 
 from .compat import InitializeClass
 from .config import DEFAULT_LOGIN_FORM_ID
+from .config import DEFAULT_FALLBACK_USER_PLUGIN_ID
 from .config import DEFAULT_LOGIN_SUBMIT_ID
 from .config import DEFAULT_PAS_ID
 from .config import DEFAULT_PLUGIN_ID
@@ -51,6 +52,7 @@ class SQLUserLoginSubmit(SimpleItem):
             password,
             REQUEST.get("otp_code", ""),
             pas=pas,
+            request=REQUEST,
         )
         if status == "enroll":
             pas.updateCredentials(REQUEST, response, login, password)
@@ -72,7 +74,7 @@ class SQLUserLoginSubmit(SimpleItem):
         response.redirect(came_from)
         return ""
 
-    def _check_credentials(self, plugin, login, password, otp_code, pas=None):
+    def _check_credentials(self, plugin, login, password, otp_code, pas=None, request=None):
         if not login or not password:
             return "credentials"
 
@@ -96,20 +98,23 @@ class SQLUserLoginSubmit(SimpleItem):
                 return "enroll"
             return "ok"
 
-        if self._check_pas_fallback_credentials(pas, plugin, login, password):
+        if self._check_pas_fallback_credentials(pas, plugin, login, password, request):
             return "ok"
 
         return "credentials"
 
-    def _check_pas_fallback_credentials(self, pas, sql_plugin, login, password):
+    def _check_pas_fallback_credentials(self, pas, sql_plugin, login, password, request=None):
         if pas is None:
             return False
 
         credentials = {"login": login, "password": password}
+        if self._check_direct_pas_authentication_plugins(pas, sql_plugin, credentials):
+            return True
+
         try:
             plugins = pas.plugins.listPlugins(IAuthenticationPlugin)
         except Exception:
-            return False
+            return self._check_pas_extracted_credentials(pas, request)
 
         sql_plugin_base = getattr(sql_plugin, "aq_base", sql_plugin)
         for _plugin_id, candidate in plugins:
@@ -125,7 +130,49 @@ class SQLUserLoginSubmit(SimpleItem):
                 continue
             if result:
                 return True
+        return self._check_pas_extracted_credentials(pas, request)
+
+    def _check_direct_pas_authentication_plugins(self, pas, sql_plugin, credentials):
+        seen = set()
+        candidate_ids = [DEFAULT_FALLBACK_USER_PLUGIN_ID]
+        try:
+            candidate_ids.extend(pas.objectIds())
+        except Exception:
+            pass
+
+        sql_plugin_base = getattr(sql_plugin, "aq_base", sql_plugin)
+        for plugin_id in candidate_ids:
+            if plugin_id in seen:
+                continue
+            seen.add(plugin_id)
+            try:
+                candidate = pas._getOb(plugin_id)
+            except Exception:
+                candidate = getattr(pas, plugin_id, None)
+            if candidate is None:
+                continue
+            candidate_base = getattr(candidate, "aq_base", candidate)
+            if candidate_base is sql_plugin_base:
+                continue
+            authenticate = getattr(candidate, "authenticateCredentials", None)
+            if authenticate is None:
+                continue
+            try:
+                result = authenticate(credentials)
+            except Exception:
+                continue
+            if result:
+                return True
         return False
+
+    def _check_pas_extracted_credentials(self, pas, request):
+        if request is None:
+            return False
+        try:
+            user_ids = pas._extractUserIds(request, pas.plugins)
+        except Exception:
+            return False
+        return bool(user_ids)
 
     def _password_matches(self, user, password):
         password_hash_id = getattr(user, "password_hash_id", "") or "plain"

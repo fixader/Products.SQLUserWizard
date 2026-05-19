@@ -127,6 +127,71 @@ def test_login_submit_accepts_pas_fallback_authentication():
     )
 
 
+def test_login_submit_accepts_direct_fallback_plugin_when_registry_is_protected():
+    class FallbackPlugin:
+        def authenticateCredentials(self, credentials):
+            if credentials == {"login": "admin", "password": "admin"}:
+                return ("admin", "admin")
+            return None
+
+    class ProtectedPluginRegistry:
+        def listPlugins(self, interface):
+            raise PermissionError("manage users required")
+
+    class FakePas:
+        plugins = ProtectedPluginRegistry()
+
+        def objectIds(self):
+            return ["zodb_fallback_users"]
+
+        def _getOb(self, object_id):
+            if object_id == "zodb_fallback_users":
+                return fallback_plugin
+            raise KeyError(object_id)
+
+    helper = SQLUserLoginSubmit()
+    fallback_plugin = FallbackPlugin()
+
+    assert (
+        helper._check_credentials(
+            FakePlugin(None),
+            "admin",
+            "admin",
+            "",
+            pas=FakePas(),
+        )
+        == "ok"
+    )
+
+
+def test_login_submit_can_use_pas_internal_extraction_when_registry_is_protected():
+    class ProtectedPluginRegistry:
+        def listPlugins(self, interface):
+            raise PermissionError("manage users required")
+
+    class FakePas:
+        plugins = ProtectedPluginRegistry()
+
+        def _extractUserIds(self, request, plugins):
+            assert request["__ac_name"] == "admin"
+            return [("admin", "admin")]
+
+    helper = SQLUserLoginSubmit()
+    request = {"__ac_name": "admin", "__ac_password": "admin"}
+
+    assert (
+        helper._check_credentials(
+            FakePlugin(None),
+            "admin",
+            "admin",
+            "",
+            pas=FakePas(),
+            request=request,
+        )
+        == "ok"
+    )
+
+
 def test_login_submit_carries_came_from_to_enrollment_page():
     class FakeRequest(dict):
         def __getattr__(self, name):
