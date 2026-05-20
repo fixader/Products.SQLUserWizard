@@ -99,3 +99,14 @@ def test_admin_page_rejects_external_referer():
     )
 
     assert came_from == ""
+
+
+def test_admin_return_link_is_before_heading():
+    admin = _admin()
+    admin._plugin = lambda: SimpleNamespace(
+        zsql_pas_list_users=lambda: [],
+        zsql_pas_list_roles=lambda: [],
+    )
+    html = admin._render("", "", {"came_from": "/App/manage_workspace"})
+
+    assert html.index("Back to app") < html.index("<h1>SQL User Admin</h1>")

@@ -291,14 +291,15 @@ class SQLUserAdmin(SimpleItem):
     .totp-qr {{ width: 11rem; height: 11rem; border: 1px solid #c8ced8; background: #fff; padding: .4rem; box-sizing: border-box; }}
     code.wrap {{ display: block; white-space: normal; overflow-wrap: anywhere; }}
     .split {{ display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }}
-    .toolbar {{ display: flex; justify-content: space-between; gap: 1rem; align-items: center; margin-bottom: 1rem; }}
+    .toolbar {{ display: flex; flex-direction: column; gap: .35rem; align-items: flex-start; margin-bottom: 1rem; }}
+    .toolbar h1 {{ margin: 0; }}
     @media (max-width: 900px) {{ .top-layout, .split, .totp-setup {{ grid-template-columns: 1fr; }} }}
   </style>
 </head>
 <body>
   <div class="toolbar">
-    <h1>SQL User Admin</h1>
     {return_link}
+    <h1>SQL User Admin</h1>
   </div>
   <p class="muted">Security users, profiles, and roles are stored through the generated Z SQL Methods in <code>{escape(self.pas_id)}/{escape(self.plugin_id)}</code>.</p>
   {message}
