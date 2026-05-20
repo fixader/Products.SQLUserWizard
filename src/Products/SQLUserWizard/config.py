@@ -42,7 +42,7 @@ def postgresql_templates(tables=None):
             "arguments": "",
             "template": f"""create table if not exists {users} (
     user_id varchar(80) primary key,
-    login_name varchar(80) unique not null,
+    username varchar(80) unique not null,
     password varchar(255) not null,
     password_hash_id varchar(40) not null default 'plain',
     enabled boolean not null default true,
@@ -110,9 +110,9 @@ def postgresql_templates(tables=None):
             "id": "zsql_pas_fetch_user",
             "title": "Fetch PAS SQL user by login",
             "arguments": "login",
-            "template": f"""select user_id, login_name, password, password_hash_id, enabled, totp_required, totp_enabled, totp_secret, recovery_email
+            "template": f"""select user_id, username as login_name, password, password_hash_id, enabled, totp_required, totp_enabled, totp_secret, recovery_email
 from {users}
-where login_name = <dtml-sqlvar login type=string>
+where username = <dtml-sqlvar login type=string>
   and enabled = true
 limit 1""",
         },
@@ -133,7 +133,7 @@ order by ur.role_id""",
             "arguments": "user_id",
             "template": f"""select
     u.user_id,
-    u.login_name,
+    u.username as login_name,
     u.password_hash_id,
     u.enabled,
     u.totp_required,
@@ -155,7 +155,7 @@ limit 1""",
             "title": "Wizard upsert PAS SQL security user",
             "arguments": "user_id login_name password password_hash_id recovery_email enabled",
             "template": f"""insert into {users}
-    (user_id, login_name, password, password_hash_id, enabled, recovery_email)
+    (user_id, username, password, password_hash_id, enabled, recovery_email)
 values
     (
       <dtml-sqlvar user_id type=string>,
@@ -166,7 +166,7 @@ values
       <dtml-sqlvar recovery_email type=string>
     )
 on conflict (user_id) do update set
-    login_name = excluded.login_name,
+    username = excluded.username,
     password = excluded.password,
     password_hash_id = excluded.password_hash_id,
     enabled = excluded.enabled,
@@ -179,7 +179,7 @@ on conflict (user_id) do update set
             "arguments": "user_id login_name recovery_email enabled",
             "template": f"""update {users}
 set
-    login_name = <dtml-sqlvar login_name type=string>,
+    username = <dtml-sqlvar login_name type=string>,
     recovery_email = <dtml-sqlvar recovery_email type=string>,
     enabled = case
         when <dtml-sqlvar enabled type=string> = '1' then true
@@ -298,7 +298,7 @@ where user_id = <dtml-sqlvar user_id type=string>""",
             "arguments": "",
             "template": f"""select
     u.user_id,
-    u.login_name,
+    u.username as login_name,
     u.recovery_email,
     u.totp_required,
     u.totp_enabled,
@@ -313,8 +313,8 @@ where user_id = <dtml-sqlvar user_id type=string>""",
 from {users} u
 left join {profiles} p on p.user_id = u.user_id
 left join {user_roles} ur on ur.user_id = u.user_id
-group by u.user_id, u.login_name, u.recovery_email, u.totp_required, u.totp_enabled, u.totp_secret, p.first_name, p.last_name, p.display_name, p.email, p.mobile, u.enabled
-order by u.login_name""",
+group by u.user_id, u.username, u.recovery_email, u.totp_required, u.totp_enabled, u.totp_secret, p.first_name, p.last_name, p.display_name, p.email, p.mobile, u.enabled
+order by u.username""",
         },
     }
 

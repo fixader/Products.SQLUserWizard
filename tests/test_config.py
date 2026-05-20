@@ -36,6 +36,15 @@ def test_postgresql_templates_use_configured_table_names():
     assert "delete from custom_users" in templates["delete_user"]["template"]
 
 
+def test_managed_user_table_uses_zope_friendly_username_column():
+    templates = postgresql_templates(DEFAULT_TABLES)
+
+    assert "username varchar(80)" in templates["setup_users"]["template"]
+    assert "username as login_name" in templates["fetch_user"]["template"]
+    assert "where username =" in templates["fetch_user"]["template"]
+    assert "login_name varchar" not in templates["setup_users"]["template"]
+
+
 def test_postgresql_templates_use_zsql_parameter_binding():
     templates = postgresql_templates(DEFAULT_TABLES)
 
@@ -131,6 +140,8 @@ def test_managed_templates_support_mainstream_lab_dialects():
         assert "update_2fa" in templates
         assert "assign_role" in templates
         assert "zsql_pas_setup_users" == templates["setup_users"]["id"]
+        assert "username" in templates["setup_users"]["template"].lower()
+        assert "username as login_name" in templates["fetch_user"]["template"].lower()
 
 
 def test_oracle11g_managed_templates_use_rownum_for_single_row_fetches():

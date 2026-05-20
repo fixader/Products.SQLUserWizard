@@ -59,7 +59,7 @@ def managed_templates(dialect="postgresql", tables=None):
         normalized,
         users,
         f"""    user_id varchar(80) primary key,
-    login_name varchar(80) unique not null,
+    username varchar(80) unique not null,
     password varchar(255) not null,
     password_hash_id varchar(40) not null default 'plain',
     enabled {_bool_type(normalized)} not null default {true_value},
@@ -137,9 +137,9 @@ def managed_templates(dialect="postgresql", tables=None):
             "arguments": "login",
             "template": _limit_one(
                 normalized,
-                f"""select {_top_one(normalized)}user_id, login_name, password, password_hash_id, enabled, totp_required, totp_enabled, totp_secret, recovery_email
+                f"""select {_top_one(normalized)}user_id, username as login_name, password, password_hash_id, enabled, totp_required, totp_enabled, totp_secret, recovery_email
 from {users}
-where login_name = <dtml-sqlvar login type=string>
+where username = <dtml-sqlvar login type=string>
   and enabled = {true_value}""",
             ),
         },
@@ -162,7 +162,7 @@ order by ur.role_id""",
                 normalized,
                 f"""select {_top_one(normalized)}
     u.user_id,
-    u.login_name,
+    u.username as login_name,
     u.password_hash_id,
     u.enabled,
     u.totp_required,
@@ -191,7 +191,7 @@ where u.user_id = <dtml-sqlvar user_id type=string>""",
             "arguments": "user_id login_name recovery_email enabled",
             "template": f"""update {users}
 set
-    login_name = <dtml-sqlvar login_name type=string>,
+    username = <dtml-sqlvar login_name type=string>,
     recovery_email = <dtml-sqlvar recovery_email type=string>,
     enabled = {enabled_expr},
     updated_at = {_current_timestamp(normalized)}
@@ -417,7 +417,7 @@ def _schema_repair_noop(dialect):
 def _upsert_user_sql(dialect, users, enabled_expr):
     if dialect in ("sqlite",):
         return f"""insert into {users}
-    (user_id, login_name, password, password_hash_id, enabled, recovery_email)
+    (user_id, username, password, password_hash_id, enabled, recovery_email)
 values (
     <dtml-sqlvar user_id type=string>,
     <dtml-sqlvar login_name type=string>,
@@ -427,7 +427,7 @@ values (
     <dtml-sqlvar recovery_email type=string>
 )
 on conflict (user_id) do update set
-    login_name = excluded.login_name,
+    username = excluded.username,
     password = excluded.password,
     password_hash_id = excluded.password_hash_id,
     enabled = excluded.enabled,
@@ -435,7 +435,7 @@ on conflict (user_id) do update set
     updated_at = {_current_timestamp(dialect)}"""
     if dialect == "mysql":
         return f"""insert into {users}
-    (user_id, login_name, password, password_hash_id, enabled, recovery_email)
+    (user_id, username, password, password_hash_id, enabled, recovery_email)
 values (
     <dtml-sqlvar user_id type=string>,
     <dtml-sqlvar login_name type=string>,
@@ -445,7 +445,7 @@ values (
     <dtml-sqlvar recovery_email type=string>
 )
 on duplicate key update
-    login_name = values(login_name),
+    username = values(username),
     password = values(password),
     password_hash_id = values(password_hash_id),
     enabled = values(enabled),
@@ -455,7 +455,7 @@ on duplicate key update
         return f"""merge {users} as target
 using (select
     <dtml-sqlvar user_id type=string> as user_id,
-    <dtml-sqlvar login_name type=string> as login_name,
+    <dtml-sqlvar login_name type=string> as username,
     <dtml-sqlvar password type=string> as password,
     <dtml-sqlvar password_hash_id type=string> as password_hash_id,
     {enabled_expr} as enabled,
@@ -463,21 +463,21 @@ using (select
 ) as source
 on target.user_id = source.user_id
 when matched then update set
-    login_name = source.login_name,
+    username = source.username,
     password = source.password,
     password_hash_id = source.password_hash_id,
     enabled = source.enabled,
     recovery_email = source.recovery_email,
     updated_at = {_current_timestamp(dialect)}
 when not matched then insert
-    (user_id, login_name, password, password_hash_id, enabled, recovery_email)
+    (user_id, username, password, password_hash_id, enabled, recovery_email)
 values
-    (source.user_id, source.login_name, source.password, source.password_hash_id, source.enabled, source.recovery_email);"""
+    (source.user_id, source.username, source.password, source.password_hash_id, source.enabled, source.recovery_email);"""
     if dialect.startswith("oracle"):
         return f"""merge into {users} target
 using (select
     <dtml-sqlvar user_id type=string> as user_id,
-    <dtml-sqlvar login_name type=string> as login_name,
+    <dtml-sqlvar login_name type=string> as username,
     <dtml-sqlvar password type=string> as password,
     <dtml-sqlvar password_hash_id type=string> as password_hash_id,
     {enabled_expr} as enabled,
@@ -485,16 +485,16 @@ using (select
 from dual) source
 on (target.user_id = source.user_id)
 when matched then update set
-    target.login_name = source.login_name,
+    target.username = source.username,
     target.password = source.password,
     target.password_hash_id = source.password_hash_id,
     target.enabled = source.enabled,
     target.recovery_email = source.recovery_email,
     target.updated_at = {_current_timestamp(dialect)}
 when not matched then insert
-    (user_id, login_name, password, password_hash_id, enabled, recovery_email)
+    (user_id, username, password, password_hash_id, enabled, recovery_email)
 values
-    (source.user_id, source.login_name, source.password, source.password_hash_id, source.enabled, source.recovery_email)"""
+    (source.user_id, source.username, source.password, source.password_hash_id, source.enabled, source.recovery_email)"""
     raise NotImplementedError(f"Unsupported upsert dialect: {dialect}")
 
 
@@ -686,7 +686,7 @@ def _list_users_sql(dialect, users, profiles, user_roles):
     if dialect in ("mssql", "oracle11g", "oracle12c", "sqlite"):
         return f"""select
     u.user_id,
-    u.login_name,
+    u.username as login_name,
     u.recovery_email,
     u.totp_required,
     u.totp_enabled,
@@ -700,10 +700,10 @@ def _list_users_sql(dialect, users, profiles, user_roles):
     {roles_expr} as roles
 from {users} u
 left join {profiles} p on p.user_id = u.user_id
-order by u.login_name"""
+order by u.username"""
     return f"""select
     u.user_id,
-    u.login_name,
+    u.username as login_name,
     u.recovery_email,
     u.totp_required,
     u.totp_enabled,
@@ -718,7 +718,7 @@ order by u.login_name"""
 from {users} u
 left join {profiles} p on p.user_id = u.user_id
 left join {user_roles} ur on ur.user_id = u.user_id
-group by u.user_id, u.login_name, u.recovery_email, u.totp_required, u.totp_enabled, u.totp_secret, p.first_name, p.last_name, p.display_name, p.email, p.mobile, u.enabled
-order by u.login_name"""
+group by u.user_id, u.username, u.recovery_email, u.totp_required, u.totp_enabled, u.totp_secret, p.first_name, p.last_name, p.display_name, p.email, p.mobile, u.enabled
+order by u.username"""
 
 

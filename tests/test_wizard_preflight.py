@@ -10,6 +10,9 @@ def test_wizard_preflight_warns_about_application_named_managed_tables():
     html = wizard._render_preflight()
 
     assert "Existing names" in html
+    assert "username" in html
+    assert "password_hash_id" in html
+    assert "role_id" in html
     assert "security fields" in html
     assert "profile fields" in html
     assert "application-only data" in html
@@ -23,6 +26,7 @@ def test_wizard_preflight_documents_auth_only_as_read_only():
     html = wizard._render_preflight()
 
     assert "Auth-only" in html
+    assert "Managed later" in html
     assert "No writes" in html
     assert "must not create" in html
 

@@ -392,6 +392,15 @@ class SQLUserWizard(SimpleItem):
                     "<code>existing_oracle</code>. Managed dialects are for "
                     "product-owned tables."
                 )
+            checks.append(
+                "<strong>Managed later</strong> A green auth-only test proves "
+                "only <code>username</code>, <code>password</code>, and role "
+                "lookup. Managed mode also needs <code>password_hash_id</code>, "
+                "<code>enabled</code>, <code>totp_required</code>, "
+                "<code>totp_enabled</code>, <code>totp_secret</code>, and "
+                "<code>recovery_email</code> in the users table, plus a "
+                "<code>role_id</code>-based assignment table."
+            )
         else:
             checks.append(
                 "<strong>Managed</strong> Install/repair may create or alter "
@@ -414,6 +423,10 @@ class SQLUserWizard(SimpleItem):
             warnings.append(
                 "<strong>Existing names</strong> These table names do not look "
                 f"product-owned: <code>{escape(', '.join(application_named))}</code>. "
+                "Managed users require <code>user_id</code>, <code>username</code>, "
+                "<code>password</code>, <code>password_hash_id</code>, "
+                "<code>enabled</code>, and 2FA/recovery columns. Managed role "
+                "assignments require <code>user_id</code> and <code>role_id</code>. "
                 "Before repair, separate identity/security fields from editable "
                 "profile fields and application-only data."
             )
