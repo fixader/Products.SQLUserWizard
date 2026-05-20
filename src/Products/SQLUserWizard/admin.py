@@ -1,6 +1,5 @@
 from html import escape
 from types import SimpleNamespace
-from urllib.parse import quote
 from urllib.parse import urlencode
 
 from AccessControl import ClassSecurityInfo
@@ -249,6 +248,8 @@ class SQLUserAdmin(SimpleItem):
         plugin = self._plugin()
         users = list(plugin.zsql_pas_list_users())
         roles = list(plugin.zsql_pas_list_roles())
+        came_from = self._admin_came_from(REQUEST)
+        return_link = self._back_to_app_link(came_from)
         selected = None
         selected_roles = []
         if selected_user_id:
@@ -290,43 +291,50 @@ class SQLUserAdmin(SimpleItem):
     .totp-qr {{ width: 11rem; height: 11rem; border: 1px solid #c8ced8; background: #fff; padding: .4rem; box-sizing: border-box; }}
     code.wrap {{ display: block; white-space: normal; overflow-wrap: anywhere; }}
     .split {{ display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }}
+    .toolbar {{ display: flex; justify-content: space-between; gap: 1rem; align-items: center; margin-bottom: 1rem; }}
     @media (max-width: 900px) {{ .top-layout, .split, .totp-setup {{ grid-template-columns: 1fr; }} }}
   </style>
 </head>
 <body>
-  <h1>SQL User Admin</h1>
+  <div class="toolbar">
+    <h1>SQL User Admin</h1>
+    {return_link}
+  </div>
   <p class="muted">Security users, profiles, and roles are stored through the generated Z SQL Methods in <code>{escape(self.pas_id)}/{escape(self.plugin_id)}</code>.</p>
   {message}
   <div class="top-layout">
     <section class="panel">
       <h2>Users</h2>
-      {self._render_users_table(users)}
+      {self._render_users_table(users, came_from)}
     </section>
     <section class="panel">
       <h2>Roles</h2>
       {self._render_roles_table(roles)}
-      {self._render_role_form()}
+      {self._render_role_form(came_from)}
     </section>
   </div>
   <section class="panel">
     <h2>{'Edit user' if selected else 'Create user'}</h2>
-    {self._render_user_form(selected, roles, selected_roles, REQUEST)}
+    {self._render_user_form(selected, roles, selected_roles, REQUEST, came_from)}
   </section>
 </body>
 </html>"""
 
-    def _render_users_table(self, users):
+    def _render_users_table(self, users, came_from=""):
         rows = []
         for user in users:
             user_id = escape(str(user.user_id))
-            user_href = quote(str(user.user_id))
+            query = {"user_id": str(user.user_id)}
+            if came_from:
+                query["came_from"] = came_from
+            href = "?" + urlencode(query)
             enabled = self._truthy(getattr(user, "enabled", True))
             status_class = "status-active" if enabled else "status-inactive"
             status_text = "Active" if enabled else "Inactive"
             display_name = self._display_name(user)
             rows.append(
                 "<tr>"
-                f"<td><a href='?user_id={user_href}'>{user_id}</a></td>"
+                f"<td><a href='{escape(href)}'>{user_id}</a></td>"
                 f"<td>{escape(str(user.login_name))}</td>"
                 f"<td>{display_name}</td>"
                 f"<td>{escape(str(getattr(user, 'email', '') or ''))}</td>"
@@ -369,10 +377,11 @@ class SQLUserAdmin(SimpleItem):
             + "</tbody></table>"
         )
 
-    def _render_role_form(self):
-        return """<form method="post" class="panel">
+    def _render_role_form(self, came_from=""):
+        return f"""<form method="post" class="panel">
   <h3>Create or update role</h3>
   <input type="hidden" name="save_role" value="1">
+  {self._came_from_input(came_from)}
   <label>Role id
     <input name="role_id" value="">
   </label>
@@ -386,14 +395,18 @@ class SQLUserAdmin(SimpleItem):
   <button type="submit">Save role</button>
 </form>"""
 
-    def _render_user_form(self, user, roles, selected_roles, REQUEST=None):
+    def _render_user_form(self, user, roles, selected_roles, REQUEST=None, came_from=""):
         value = self._value
         enabled = True if user is None else self._truthy(getattr(user, "enabled", True))
         delete_button = ""
         if user is not None:
             delete_button = """<button class="danger" type="submit" name="delete_user" value="1" onclick="return confirm('Delete this SQL user? This cannot be undone.');">Delete user</button>"""
+        new_user_href = "./manage_workspace"
+        if came_from:
+            new_user_href = "./manage_workspace?" + urlencode({"came_from": came_from})
         return f"""<form method="post">
   <input type="hidden" name="save_user" value="1">
+  {self._came_from_input(came_from)}
   <div class="top-layout">
     <fieldset>
       <legend>Security</legend>
@@ -426,7 +439,7 @@ class SQLUserAdmin(SimpleItem):
   <div class="form-actions">
     <button type="submit">Save security and roles</button>
     {delete_button}
-    <a href="./manage_workspace">New user</a>
+    <a href="{escape(new_user_href)}">New user</a>
   </div>
   {self._render_profile_fields(user, REQUEST)}
 </form>"""
@@ -783,6 +796,46 @@ class SQLUserAdmin(SimpleItem):
         if came_from.startswith("/") and not came_from.startswith("//"):
             return came_from
         return ""
+
+    def _admin_came_from(self, REQUEST):
+        if REQUEST is None:
+            return ""
+
+        came_from = self._safe_came_from(REQUEST)
+        if not came_from:
+            came_from = self._safe_local_url(
+                str(REQUEST.get("HTTP_REFERER", "") or "").strip()
+            )
+
+        if not came_from or self._is_admin_url(came_from):
+            return ""
+        return came_from
+
+    def _safe_local_url(self, url):
+        if not url:
+            return ""
+
+        folder_url = self.aq_parent.absolute_url()
+        folder_path = self.aq_parent.absolute_url_path()
+        if url == folder_url or url.startswith(f"{folder_url}/"):
+            return url
+        if url == folder_path or url.startswith(f"{folder_path}/"):
+            return url
+        if url.startswith("/") and not url.startswith("//"):
+            return url
+        return ""
+
+    def _is_admin_url(self, url):
+        try:
+            admin_url = self.absolute_url()
+            admin_path = self.absolute_url_path()
+        except Exception:
+            admin_url = ""
+            admin_path = ""
+        return bool(
+            (admin_url and (url == admin_url or url.startswith(f"{admin_url}/")))
+            or (admin_path and (url == admin_path or url.startswith(f"{admin_path}/")))
+        )
 
     def _with_came_from(self, path, came_from):
         if not came_from:

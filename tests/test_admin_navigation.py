@@ -60,3 +60,42 @@ def test_twofa_page_preserves_return_to_app_in_form_and_profile_link():
     assert f'href="{came_from}">Back to app</a>' in html
     assert f'name="came_from" value="{came_from}"' in html
     assert f'my_profile?came_from={quote_plus(came_from)}' in html
+
+
+def test_admin_page_can_take_return_target_from_first_referer():
+    admin = _admin()
+
+    came_from = admin._admin_came_from(
+        {"HTTP_REFERER": "http://zope.local/App/manage_workspace"}
+    )
+
+    assert came_from == "http://zope.local/App/manage_workspace"
+
+
+def test_admin_user_links_preserve_return_target():
+    came_from = "http://zope.local/App/manage_workspace"
+    html = _admin()._render_users_table([_user()], came_from)
+
+    assert "user_id=alice" in html
+    assert f"came_from={quote_plus(came_from)}" in html
+
+
+def test_admin_forms_preserve_return_target():
+    came_from = "/App/manage_workspace"
+    admin = _admin()
+
+    assert f'name="came_from" value="{came_from}"' in admin._render_role_form(came_from)
+    assert f'name="came_from" value="{came_from}"' in admin._render_user_form(
+        None,
+        [],
+        [],
+        came_from=came_from,
+    )
+
+
+def test_admin_page_rejects_external_referer():
+    came_from = _admin()._admin_came_from(
+        {"HTTP_REFERER": "https://not-our-site.example/manage_workspace"}
+    )
+
+    assert came_from == ""
