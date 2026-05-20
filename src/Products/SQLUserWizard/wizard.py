@@ -54,25 +54,17 @@ class SQLUserWizard(SimpleItem):
             REQUEST.RESPONSE.setHeader("Content-Type", "text/html; charset=utf-8")
 
         message = ""
-        if REQUEST is not None and REQUEST.get("run_wizard"):
-            self.connection_id = REQUEST.get("connection_id", self.connection_id)
-            self.dialect = REQUEST.get("dialect", self.dialect)
-            self.mode = REQUEST.get("mode", self.mode)
-            self.users_table = REQUEST.get("users_table", self.users_table)
-            self.profiles_table = REQUEST.get("profiles_table", self.profiles_table)
-            self.roles_table = REQUEST.get("roles_table", self.roles_table)
-            self.user_roles_table = REQUEST.get(
-                "user_roles_table", self.user_roles_table
+        if REQUEST is not None and REQUEST.get("prepare_managed_migration"):
+            self._capture_form_values(REQUEST)
+            self._prepare_managed_migration()
+            message = self._format_notice(
+                "Managed migration prepared",
+                "Run the starter SQL against a database copy, verify the new "
+                "tables, then run Install / Repair SQL PAS in managed mode.",
             )
-            self.fallback_login = REQUEST.get("fallback_login", self.fallback_login)
+        elif REQUEST is not None and REQUEST.get("run_wizard"):
+            self._capture_form_values(REQUEST)
             fallback_password = REQUEST.get("fallback_password", "")
-            self.initial_user_id = REQUEST.get("initial_user_id", self.initial_user_id)
-            self.initial_login_name = REQUEST.get(
-                "initial_login_name", self.initial_login_name
-            )
-            self.initial_roles = REQUEST.get("initial_roles", self.initial_roles)
-            self.seed_standard_roles = bool(REQUEST.get("seed_standard_roles", ""))
-            self.totp_issuer = REQUEST.get("totp_issuer", self.totp_issuer)
             result = self.install_or_repair(
                 fallback_password=fallback_password,
                 initial_password=REQUEST.get("initial_password", ""),
@@ -80,6 +72,40 @@ class SQLUserWizard(SimpleItem):
             message = self._format_result(result)
 
         return self._render_form(message)
+
+    def _capture_form_values(self, REQUEST):
+        self.connection_id = REQUEST.get("connection_id", self.connection_id)
+        self.dialect = REQUEST.get("dialect", self.dialect)
+        self.mode = REQUEST.get("mode", self.mode)
+        self.users_table = REQUEST.get("users_table", self.users_table)
+        self.profiles_table = REQUEST.get("profiles_table", self.profiles_table)
+        self.roles_table = REQUEST.get("roles_table", self.roles_table)
+        self.user_roles_table = REQUEST.get(
+            "user_roles_table", self.user_roles_table
+        )
+        self.fallback_login = REQUEST.get("fallback_login", self.fallback_login)
+        self.initial_user_id = REQUEST.get("initial_user_id", self.initial_user_id)
+        self.initial_login_name = REQUEST.get(
+            "initial_login_name", self.initial_login_name
+        )
+        self.initial_roles = REQUEST.get("initial_roles", self.initial_roles)
+        self.seed_standard_roles = bool(REQUEST.get("seed_standard_roles", ""))
+        self.totp_issuer = REQUEST.get("totp_issuer", self.totp_issuer)
+
+    def _prepare_managed_migration(self):
+        self.mode = MODE_MANAGED
+        if self.dialect == "existing_oracle":
+            self.dialect = "oracle11g"
+        elif self.dialect == "existing_postgresql":
+            self.dialect = "postgresql"
+        self.users_table = "pas_users_migrated"
+        self.user_roles_table = "pas_user_roles_migrated"
+
+    def _format_notice(self, title, body):
+        return (
+            "<section class='result'><h2>"
+            f"{escape(title)}</h2><p>{escape(body)}</p></section>"
+        )
 
     security.declareProtected(manage_users, "manage_workspace")
 
@@ -362,6 +388,7 @@ class SQLUserWizard(SimpleItem):
         roles = escape(self.user_roles_table)
         profiles = escape(self.profiles_table)
         catalog = escape(self.roles_table)
+        managed_dialect = escape(self._managed_migration_dialect())
         sql = escape(self._auth_only_migration_sql())
         return f"""
       <h3>Classic acl_users Migration</h3>
@@ -393,7 +420,48 @@ class SQLUserWizard(SimpleItem):
         product-owned managed tables.</p>
         <pre>{sql}</pre>
       </details>
+      <form method="post" class="migration-sql">
+        {self._managed_migration_hidden_fields()}
+        <p class="note">After running and verifying the SQL, the wizard should
+        be switched to these managed settings: dialect
+        <code>{managed_dialect}</code>, users table
+        <code>pas_users_migrated</code>, profiles table
+        <code>{profiles}</code>, roles catalog table <code>{catalog}</code>,
+        and user roles table <code>pas_user_roles_migrated</code>.</p>
+        <button type="submit" name="prepare_managed_migration" value="1">
+          Prepare wizard for managed takeover
+        </button>
+      </form>
 """
+
+    def _managed_migration_dialect(self):
+        if self.dialect == "existing_oracle":
+            return "oracle11g"
+        if self.dialect == "existing_postgresql":
+            return "postgresql"
+        return self.dialect
+
+    def _managed_migration_hidden_fields(self):
+        fields = {
+            "connection_id": self.connection_id,
+            "dialect": self.dialect,
+            "mode": self.mode,
+            "users_table": self.users_table,
+            "profiles_table": self.profiles_table,
+            "roles_table": self.roles_table,
+            "user_roles_table": self.user_roles_table,
+            "fallback_login": self.fallback_login,
+            "initial_user_id": self.initial_user_id,
+            "initial_login_name": self.initial_login_name,
+            "initial_roles": self.initial_roles,
+            "totp_issuer": self.totp_issuer,
+        }
+        if self.seed_standard_roles:
+            fields["seed_standard_roles"] = "1"
+        return "\n".join(
+            f'<input type="hidden" name="{escape(name)}" value="{escape(str(value))}">'
+            for name, value in fields.items()
+        )
 
     def _auth_only_migration_sql(self):
         if self.dialect == "existing_oracle":

@@ -47,6 +47,24 @@ def test_wizard_auth_only_summarizes_classic_acl_users_migration():
     assert "pas_users_migrated" in html
     assert "pas_user_roles_migrated" in html
     assert "substr(password, 1, 1)" in html
+    assert "Prepare wizard for managed takeover" in html
+    assert "dialect" in html
+    assert "oracle11g" in html
+
+
+def test_wizard_prepare_managed_migration_updates_fields_without_installing():
+    wizard = SQLUserWizard()
+    wizard.mode = MODE_AUTH_ONLY
+    wizard.dialect = "existing_oracle"
+    wizard.users_table = "users"
+    wizard.user_roles_table = "roles"
+
+    wizard._prepare_managed_migration()
+
+    assert wizard.mode == "managed"
+    assert wizard.dialect == "oracle11g"
+    assert wizard.users_table == "pas_users_migrated"
+    assert wizard.user_roles_table == "pas_user_roles_migrated"
 
 
 def test_wizard_preflight_catches_duplicate_table_names():
