@@ -31,6 +31,24 @@ def test_wizard_preflight_documents_auth_only_as_read_only():
     assert "must not create" in html
 
 
+def test_wizard_auth_only_summarizes_classic_acl_users_migration():
+    wizard = SQLUserWizard()
+    wizard.mode = MODE_AUTH_ONLY
+    wizard.dialect = "existing_oracle"
+    wizard.users_table = "users"
+    wizard.user_roles_table = "roles"
+
+    html = wizard._render_preflight()
+
+    assert "Classic acl_users Migration" in html
+    assert "users.username" in html
+    assert "roles.role" in html
+    assert "username</code> to its internal" in html
+    assert "pas_users_migrated" in html
+    assert "pas_user_roles_migrated" in html
+    assert "substr(password, 1, 1)" in html
+
+
 def test_wizard_preflight_catches_duplicate_table_names():
     wizard = SQLUserWizard()
     wizard.users_table = "pas_users"

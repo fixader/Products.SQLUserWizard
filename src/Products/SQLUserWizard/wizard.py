@@ -198,6 +198,8 @@ class SQLUserWizard(SimpleItem):
     .clean-list.danger li {{ background: #fff1f0; border-left-color: #b42318; }}
     .preflight strong {{ display: inline-block; min-width: 7.5rem; }}
     .preflight code {{ background: #f6f7f9; padding: .1rem .25rem; }}
+    .preflight pre {{ overflow: auto; padding: .85rem; background: #172033; color: #f8fafc; }}
+    .migration-sql {{ margin-top: .85rem; }}
     .summary {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin-top: 1rem; }}
     .summary div {{ background: #fff; border: 1px solid #d5dbe3; padding: .85rem; }}
     .summary strong {{ display: block; margin-bottom: .25rem; }}
@@ -339,6 +341,11 @@ class SQLUserWizard(SimpleItem):
             )
             sections.extend(f"<li>{item}</li>" for item in items)
             sections.append("</ul>")
+        migration_summary = (
+            self._render_auth_only_migration_summary()
+            if self.mode == MODE_AUTH_ONLY
+            else ""
+        )
         return f"""
     <section class="panel preflight">
       <h2>Preflight</h2>
@@ -346,8 +353,166 @@ class SQLUserWizard(SimpleItem):
       databases may mix authentication fields, profile fields, and application
       data in the same tables.</p>
       {''.join(sections)}
+      {migration_summary}
     </section>
 """
+
+    def _render_auth_only_migration_summary(self):
+        users = escape(self.users_table)
+        roles = escape(self.user_roles_table)
+        profiles = escape(self.profiles_table)
+        catalog = escape(self.roles_table)
+        sql = escape(self._auth_only_migration_sql())
+        return f"""
+      <h3>Classic acl_users Migration</h3>
+      <ul class="clean-list">
+        <li><strong>Recognized shape</strong> Auth-only expects
+        <code>{users}.username</code>, <code>{users}.password</code>,
+        <code>{roles}.username</code>, and <code>{roles}.role</code>. The
+        wizard maps <code>username</code> to its internal
+        <code>login_name</code>.</li>
+        <li><strong>Managed gap</strong> Managed mode additionally needs
+        <code>password_hash_id</code>, <code>enabled</code>,
+        <code>totp_required</code>, <code>totp_enabled</code>,
+        <code>totp_secret</code>, and <code>recovery_email</code> on users,
+        and role assignments as <code>user_id</code>/<code>role_id</code>.</li>
+        <li><strong>Profile split</strong> Fields such as
+        <code>firstname</code>, <code>lastname</code>, email, phone, theme,
+        language, company, notes, and other application data should move to
+        <code>{profiles}</code> or an application table, not stay in the
+        managed security table.</li>
+        <li><strong>Safer takeover</strong> Prefer creating managed
+        <code>pas_*</code> tables from the classic tables, then point the
+        wizard at those managed tables. Keep the old tables read-only until
+        the application has been tested.</li>
+      </ul>
+      <details class="migration-sql">
+        <summary>Suggested starter SQL for a classic acl_users migration</summary>
+        <p class="note">Review and run manually against a copy first. The SQL
+        assumes the classic table names currently entered above and creates
+        product-owned managed tables.</p>
+        <pre>{sql}</pre>
+      </details>
+"""
+
+    def _auth_only_migration_sql(self):
+        if self.dialect == "existing_oracle":
+            return self._oracle_auth_only_migration_sql()
+        return self._postgres_auth_only_migration_sql()
+
+    def _oracle_auth_only_migration_sql(self):
+        users = self.users_table
+        roles = self.user_roles_table
+        profiles = self.profiles_table
+        catalog = self.roles_table
+        return f"""-- Classic acl_users -> managed SQL User Wizard tables.
+-- Review names, datatypes, and constraints before running.
+
+create table pas_users_migrated as
+select
+    cast(username as varchar2(80)) as user_id,
+    cast(username as varchar2(80)) as username,
+    password,
+    case when substr(password, 1, 1) = '{{' then 'authencoding' else 'plain' end as password_hash_id,
+    1 as enabled,
+    0 as totp_required,
+    0 as totp_enabled,
+    cast(null as varchar2(64)) as totp_secret,
+    cast(null as varchar2(255)) as recovery_email,
+    sysdate as created_at,
+    sysdate as updated_at,
+    cast(null as date) as last_login_at
+from {users};
+
+create table {profiles} as
+select
+    cast(username as varchar2(80)) as user_id,
+    cast(firstname as varchar2(80)) as first_name,
+    cast(lastname as varchar2(80)) as last_name,
+    cast(trim(firstname || ' ' || lastname) as varchar2(160)) as display_name,
+    cast(null as varchar2(255)) as email,
+    cast(null as varchar2(40)) as mobile,
+    sysdate as created_at,
+    sysdate as updated_at
+from {users};
+
+create table {catalog} as
+select distinct
+    cast(role as varchar2(80)) as role_id,
+    cast(role as varchar2(160)) as title,
+    1 as enabled,
+    sysdate as created_at,
+    sysdate as updated_at
+from {roles};
+
+create table pas_user_roles_migrated as
+select distinct
+    cast(username as varchar2(80)) as user_id,
+    cast(role as varchar2(80)) as role_id
+from {roles};
+
+-- Then configure managed mode with:
+-- users table: pas_users_migrated
+-- profiles table: {profiles}
+-- roles catalog table: {catalog}
+-- user roles table: pas_user_roles_migrated"""
+
+    def _postgres_auth_only_migration_sql(self):
+        users = self.users_table
+        roles = self.user_roles_table
+        profiles = self.profiles_table
+        catalog = self.roles_table
+        return f"""-- Classic acl_users -> managed SQL User Wizard tables.
+-- Review names, datatypes, and constraints before running.
+
+create table pas_users_migrated as
+select
+    username::varchar(80) as user_id,
+    username::varchar(80) as username,
+    password,
+    case when left(password, 1) = '{{' then 'authencoding' else 'plain' end as password_hash_id,
+    true as enabled,
+    false as totp_required,
+    false as totp_enabled,
+    null::varchar(64) as totp_secret,
+    null::varchar(255) as recovery_email,
+    current_timestamp as created_at,
+    current_timestamp as updated_at,
+    null::timestamp as last_login_at
+from {users};
+
+create table {profiles} as
+select
+    username::varchar(80) as user_id,
+    firstname::varchar(80) as first_name,
+    lastname::varchar(80) as last_name,
+    trim(concat(firstname, ' ', lastname))::varchar(160) as display_name,
+    null::varchar(255) as email,
+    null::varchar(40) as mobile,
+    current_timestamp as created_at,
+    current_timestamp as updated_at
+from {users};
+
+create table {catalog} as
+select distinct
+    role::varchar(80) as role_id,
+    role::varchar(160) as title,
+    true as enabled,
+    current_timestamp as created_at,
+    current_timestamp as updated_at
+from {roles};
+
+create table pas_user_roles_migrated as
+select distinct
+    username::varchar(80) as user_id,
+    role::varchar(80) as role_id
+from {roles};
+
+-- Then configure managed mode with:
+-- users table: pas_users_migrated
+-- profiles table: {profiles}
+-- roles catalog table: {catalog}
+-- user roles table: pas_user_roles_migrated"""
 
     def _preflight_groups(self):
         table_values = {
