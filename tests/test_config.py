@@ -1,7 +1,9 @@
 from Products.SQLUserWizard.config import (
     DEFAULT_COOKIE_AUTH_ID,
+    DEFAULT_MIGRATION_SQL_ID,
     DEFAULT_TABLES,
     auth_only_templates,
+    classic_acl_users_migration_template,
     profile_postgresql_templates,
     postgresql_templates,
 )
@@ -170,3 +172,23 @@ def test_profile_templates_are_dialect_wrapped():
 
 def test_default_role_catalog_name_is_explicit():
     assert DEFAULT_TABLES["roles"] == "pas_roles_catalog"
+
+
+def test_classic_acl_users_migration_template_is_runnable_zsql():
+    spec = classic_acl_users_migration_template(
+        "existing_oracle",
+        {
+            "users": "users",
+            "profiles": "pas_user_profiles",
+            "roles": "pas_roles_catalog",
+            "user_roles": "roles",
+        },
+    )
+
+    assert spec["id"] == DEFAULT_MIGRATION_SQL_ID
+    assert spec["arguments"] == ""
+    assert "begin" in spec["template"].lower()
+    assert "execute immediate" in spec["template"].lower()
+    assert "create table pas_users_migrated" in spec["template"].lower()
+    assert "from users" in spec["template"].lower()
+    assert "from roles" in spec["template"].lower()

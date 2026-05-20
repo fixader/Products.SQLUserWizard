@@ -16,6 +16,7 @@ DEFAULT_LOGIN_SUBMIT_ID = "sql_user_login_submit"
 DEFAULT_LOGOUT_ID = "sql_user_logout"
 DEFAULT_SECURE_TEST_ID = "secure_test_page"
 DEFAULT_COOKIE_AUTH_ID = "sql_cookie_auth"
+DEFAULT_MIGRATION_SQL_ID = "zsql_pas_classic_acl_users_migration"
 DEFAULT_PASSWORD_HASH_ID = "authencoding"
 DEFAULT_TOTP_ISSUER = "Zope SQL Users"
 MODE_MANAGED = "managed"
@@ -27,6 +28,134 @@ DEFAULT_TABLES = {
     "roles": "pas_roles_catalog",
     "user_roles": "pas_user_roles",
 }
+
+
+def classic_acl_users_migration_template(dialect="existing_postgresql", tables=None):
+    tables = tables or DEFAULT_TABLES
+    if dialect == "existing_oracle":
+        template = oracle_classic_acl_users_migration_sql(tables)
+    else:
+        template = postgresql_classic_acl_users_migration_sql(tables)
+    return {
+        "id": DEFAULT_MIGRATION_SQL_ID,
+        "title": "Classic acl_users migration to managed SQL User Wizard tables",
+        "arguments": "",
+        "template": template,
+    }
+
+
+def oracle_classic_acl_users_migration_sql(tables=None):
+    tables = tables or DEFAULT_TABLES
+    users = tables["users"]
+    roles = tables["user_roles"]
+    profiles = tables["profiles"]
+    catalog = tables["roles"]
+    return f"""-- Classic acl_users -> managed SQL User Wizard tables.
+-- Review names, datatypes, and constraints before running.
+-- This creates new product-owned tables; it does not alter the classic tables.
+
+begin
+    execute immediate '
+        create table pas_users_migrated as
+        select
+            cast(username as varchar2(80)) as user_id,
+            cast(username as varchar2(80)) as username,
+            password,
+            case when substr(password, 1, 1) = ''{{'' then ''authencoding'' else ''plain'' end as password_hash_id,
+            1 as enabled,
+            0 as totp_required,
+            0 as totp_enabled,
+            cast(null as varchar2(64)) as totp_secret,
+            cast(null as varchar2(255)) as recovery_email,
+            sysdate as created_at,
+            sysdate as updated_at,
+            cast(null as date) as last_login_at
+        from {users}';
+
+    execute immediate '
+        create table {profiles} as
+        select
+            cast(username as varchar2(80)) as user_id,
+            cast(firstname as varchar2(80)) as first_name,
+            cast(lastname as varchar2(80)) as last_name,
+            cast(trim(firstname || '' '' || lastname) as varchar2(160)) as display_name,
+            cast(null as varchar2(255)) as email,
+            cast(null as varchar2(40)) as mobile,
+            sysdate as created_at,
+            sysdate as updated_at
+        from {users}';
+
+    execute immediate '
+        create table {catalog} as
+        select distinct
+            cast(role as varchar2(80)) as role_id,
+            cast(role as varchar2(160)) as title,
+            1 as enabled,
+            sysdate as created_at,
+            sysdate as updated_at
+        from {roles}';
+
+    execute immediate '
+        create table pas_user_roles_migrated as
+        select distinct
+            cast(username as varchar2(80)) as user_id,
+            cast(role as varchar2(80)) as role_id
+        from {roles}';
+end;"""
+
+
+def postgresql_classic_acl_users_migration_sql(tables=None):
+    tables = tables or DEFAULT_TABLES
+    users = tables["users"]
+    roles = tables["user_roles"]
+    profiles = tables["profiles"]
+    catalog = tables["roles"]
+    return f"""-- Classic acl_users -> managed SQL User Wizard tables.
+-- Review names, datatypes, and constraints before running.
+-- This creates new product-owned tables; it does not alter the classic tables.
+
+create table pas_users_migrated as
+select
+    username::varchar(80) as user_id,
+    username::varchar(80) as username,
+    password,
+    case when left(password, 1) = '{{' then 'authencoding' else 'plain' end as password_hash_id,
+    true as enabled,
+    false as totp_required,
+    false as totp_enabled,
+    null::varchar(64) as totp_secret,
+    null::varchar(255) as recovery_email,
+    current_timestamp as created_at,
+    current_timestamp as updated_at,
+    null::timestamp as last_login_at
+from {users};
+
+create table {profiles} as
+select
+    username::varchar(80) as user_id,
+    firstname::varchar(80) as first_name,
+    lastname::varchar(80) as last_name,
+    trim(concat(firstname, ' ', lastname))::varchar(160) as display_name,
+    null::varchar(255) as email,
+    null::varchar(40) as mobile,
+    current_timestamp as created_at,
+    current_timestamp as updated_at
+from {users};
+
+create table {catalog} as
+select distinct
+    role::varchar(80) as role_id,
+    role::varchar(160) as title,
+    true as enabled,
+    current_timestamp as created_at,
+    current_timestamp as updated_at
+from {roles};
+
+create table pas_user_roles_migrated as
+select distinct
+    username::varchar(80) as user_id,
+    role::varchar(80) as role_id
+from {roles};"""
 
 
 def postgresql_templates(tables=None):

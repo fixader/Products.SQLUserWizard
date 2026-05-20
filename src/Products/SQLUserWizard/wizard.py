@@ -6,11 +6,13 @@ from OFS.SimpleItem import SimpleItem
 
 from .config import (
     DEFAULT_FALLBACK_LOGIN,
+    DEFAULT_MIGRATION_SQL_ID,
     DEFAULT_TABLES,
     DEFAULT_TOTP_ISSUER,
     DEFAULT_WIZARD_ID,
     MODE_AUTH_ONLY,
     MODE_MANAGED,
+    classic_acl_users_migration_template,
 )
 from .compat import InitializeClass
 from .installer import SQLUserWizardInstaller
@@ -428,6 +430,10 @@ class SQLUserWizard(SimpleItem):
         <code>pas_users_migrated</code>, profiles table
         <code>{profiles}</code>, roles catalog table <code>{catalog}</code>,
         and user roles table <code>pas_user_roles_migrated</code>.</p>
+        <p class="note">Install/repair also creates the same SQL as
+        <code>acl_users/sql_auth/{DEFAULT_MIGRATION_SQL_ID}</code>. Open that
+        Z SQL Method in ZMI and use its Test tab when you want Zope to run the
+        migration SQL through the selected database adapter.</p>
         <button type="submit" name="prepare_managed_migration" value="1">
           Prepare wizard for managed takeover
         </button>
@@ -464,123 +470,15 @@ class SQLUserWizard(SimpleItem):
         )
 
     def _auth_only_migration_sql(self):
-        if self.dialect == "existing_oracle":
-            return self._oracle_auth_only_migration_sql()
-        return self._postgres_auth_only_migration_sql()
-
-    def _oracle_auth_only_migration_sql(self):
-        users = self.users_table
-        roles = self.user_roles_table
-        profiles = self.profiles_table
-        catalog = self.roles_table
-        return f"""-- Classic acl_users -> managed SQL User Wizard tables.
--- Review names, datatypes, and constraints before running.
-
-create table pas_users_migrated as
-select
-    cast(username as varchar2(80)) as user_id,
-    cast(username as varchar2(80)) as username,
-    password,
-    case when substr(password, 1, 1) = '{{' then 'authencoding' else 'plain' end as password_hash_id,
-    1 as enabled,
-    0 as totp_required,
-    0 as totp_enabled,
-    cast(null as varchar2(64)) as totp_secret,
-    cast(null as varchar2(255)) as recovery_email,
-    sysdate as created_at,
-    sysdate as updated_at,
-    cast(null as date) as last_login_at
-from {users};
-
-create table {profiles} as
-select
-    cast(username as varchar2(80)) as user_id,
-    cast(firstname as varchar2(80)) as first_name,
-    cast(lastname as varchar2(80)) as last_name,
-    cast(trim(firstname || ' ' || lastname) as varchar2(160)) as display_name,
-    cast(null as varchar2(255)) as email,
-    cast(null as varchar2(40)) as mobile,
-    sysdate as created_at,
-    sysdate as updated_at
-from {users};
-
-create table {catalog} as
-select distinct
-    cast(role as varchar2(80)) as role_id,
-    cast(role as varchar2(160)) as title,
-    1 as enabled,
-    sysdate as created_at,
-    sysdate as updated_at
-from {roles};
-
-create table pas_user_roles_migrated as
-select distinct
-    cast(username as varchar2(80)) as user_id,
-    cast(role as varchar2(80)) as role_id
-from {roles};
-
--- Then configure managed mode with:
--- users table: pas_users_migrated
--- profiles table: {profiles}
--- roles catalog table: {catalog}
--- user roles table: pas_user_roles_migrated"""
-
-    def _postgres_auth_only_migration_sql(self):
-        users = self.users_table
-        roles = self.user_roles_table
-        profiles = self.profiles_table
-        catalog = self.roles_table
-        return f"""-- Classic acl_users -> managed SQL User Wizard tables.
--- Review names, datatypes, and constraints before running.
-
-create table pas_users_migrated as
-select
-    username::varchar(80) as user_id,
-    username::varchar(80) as username,
-    password,
-    case when left(password, 1) = '{{' then 'authencoding' else 'plain' end as password_hash_id,
-    true as enabled,
-    false as totp_required,
-    false as totp_enabled,
-    null::varchar(64) as totp_secret,
-    null::varchar(255) as recovery_email,
-    current_timestamp as created_at,
-    current_timestamp as updated_at,
-    null::timestamp as last_login_at
-from {users};
-
-create table {profiles} as
-select
-    username::varchar(80) as user_id,
-    firstname::varchar(80) as first_name,
-    lastname::varchar(80) as last_name,
-    trim(concat(firstname, ' ', lastname))::varchar(160) as display_name,
-    null::varchar(255) as email,
-    null::varchar(40) as mobile,
-    current_timestamp as created_at,
-    current_timestamp as updated_at
-from {users};
-
-create table {catalog} as
-select distinct
-    role::varchar(80) as role_id,
-    role::varchar(160) as title,
-    true as enabled,
-    current_timestamp as created_at,
-    current_timestamp as updated_at
-from {roles};
-
-create table pas_user_roles_migrated as
-select distinct
-    username::varchar(80) as user_id,
-    role::varchar(80) as role_id
-from {roles};
-
--- Then configure managed mode with:
--- users table: pas_users_migrated
--- profiles table: {profiles}
--- roles catalog table: {catalog}
--- user roles table: pas_user_roles_migrated"""
+        return classic_acl_users_migration_template(
+            self.dialect,
+            {
+                "users": self.users_table,
+                "profiles": self.profiles_table,
+                "roles": self.roles_table,
+                "user_roles": self.user_roles_table,
+            },
+        )["template"]
 
     def _preflight_groups(self):
         table_values = {
