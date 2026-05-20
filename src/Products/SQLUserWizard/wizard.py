@@ -7,6 +7,7 @@ from OFS.SimpleItem import SimpleItem
 from .config import (
     DEFAULT_FALLBACK_LOGIN,
     DEFAULT_MIGRATION_SQL_ID,
+    DEFAULT_MIGRATION_TABLES_ID,
     DEFAULT_TABLES,
     DEFAULT_TOTP_ISSUER,
     DEFAULT_WIZARD_ID,
@@ -64,6 +65,9 @@ class SQLUserWizard(SimpleItem):
                 "Run the starter SQL against a database copy, verify the new "
                 "tables, then run Install / Repair SQL PAS in managed mode.",
             )
+        elif REQUEST is not None and REQUEST.get("check_migration_status"):
+            self._capture_form_values(REQUEST)
+            message = self._format_migration_status()
         elif REQUEST is not None and REQUEST.get("run_wizard"):
             self._capture_form_values(REQUEST)
             fallback_password = REQUEST.get("fallback_password", "")
@@ -108,6 +112,85 @@ class SQLUserWizard(SimpleItem):
             "<section class='result'><h2>"
             f"{escape(title)}</h2><p>{escape(body)}</p></section>"
         )
+
+    def _format_migration_status(self):
+        try:
+            rows = self._migration_table_rows()
+        except Exception as exc:
+            return self._format_notice(
+                "Migration status unavailable",
+                "Run auth-only Install / Repair first, open the database "
+                f"connection, then try again. Details: {exc}",
+            )
+
+        existing = {str(getattr(row, "table_name", "")).lower() for row in rows}
+        expected = self._expected_migration_tables()
+        old_tables = {self.users_table.lower(), self.user_roles_table.lower()}
+        new_tables = {"pas_users_migrated", "pas_user_roles_migrated"}
+        support_tables = {self.profiles_table.lower(), self.roles_table.lower()}
+
+        missing_old = sorted(old_tables - existing)
+        existing_new = sorted(new_tables & existing)
+        missing_new = sorted(new_tables - existing)
+        existing_support = sorted(support_tables & existing)
+        missing_support = sorted(support_tables - existing)
+
+        items = []
+        if missing_old:
+            items.append(
+                "Classic source table(s) missing: "
+                + ", ".join(f"<code>{escape(name)}</code>" for name in missing_old)
+            )
+        if existing_support and missing_new:
+            items.append(
+                "Support table name collision before migration: "
+                + ", ".join(f"<code>{escape(name)}</code>" for name in existing_support)
+                + ". Use different support table names or remove/rename those tables "
+                "before running the starter SQL."
+            )
+        if missing_new:
+            items.append(
+                "Managed takeover is not ready yet. Missing migrated table(s): "
+                + ", ".join(f"<code>{escape(name)}</code>" for name in missing_new)
+            )
+        if missing_support:
+            items.append(
+                "Support table(s) not present yet: "
+                + ", ".join(f"<code>{escape(name)}</code>" for name in missing_support)
+            )
+        if not missing_old and not missing_new and not missing_support:
+            items.append(
+                "Ready for managed takeover. Press "
+                "<strong>Prepare wizard for managed takeover</strong>, then run "
+                "<strong>Install / Repair SQL PAS</strong>."
+            )
+
+        seen = ", ".join(f"<code>{escape(name)}</code>" for name in sorted(existing))
+        expected_text = ", ".join(
+            f"<code>{escape(name)}</code>" for name in sorted(expected)
+        )
+        return (
+            "<section class='result'><h2>Classic migration status</h2>"
+            f"<p class='note'>Expected tables checked: {expected_text}</p>"
+            f"<p class='note'>Existing matching tables: {seen or 'none'}</p>"
+            "<ul class='clean-list warnings'>"
+            + "".join(f"<li>{item}</li>" for item in items)
+            + "</ul></section>"
+        )
+
+    def _migration_table_rows(self):
+        plugin = self.aq_parent.acl_users.sql_auth
+        return list(getattr(plugin, DEFAULT_MIGRATION_TABLES_ID)())
+
+    def _expected_migration_tables(self):
+        return {
+            "pas_users_migrated",
+            "pas_user_roles_migrated",
+            self.profiles_table.lower(),
+            self.roles_table.lower(),
+            self.users_table.lower(),
+            self.user_roles_table.lower(),
+        }
 
     security.declareProtected(manage_users, "manage_workspace")
 
@@ -449,7 +532,12 @@ class SQLUserWizard(SimpleItem):
         <p class="note">Install/repair also creates the same SQL as
         <code>acl_users/sql_auth/{DEFAULT_MIGRATION_SQL_ID}</code>. Open that
         Z SQL Method in ZMI and use its Test tab when you want Zope to run the
-        migration SQL through the selected database adapter.</p>
+        migration SQL through the selected database adapter. It also creates
+        <code>acl_users/sql_auth/{DEFAULT_MIGRATION_TABLES_ID}</code>, used by
+        the status check below.</p>
+        <button type="submit" name="check_migration_status" value="1">
+          Check migration status
+        </button>
         <button type="submit" name="prepare_managed_migration" value="1">
           Prepare wizard for managed takeover
         </button>

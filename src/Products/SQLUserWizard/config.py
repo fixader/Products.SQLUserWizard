@@ -17,6 +17,7 @@ DEFAULT_LOGOUT_ID = "sql_user_logout"
 DEFAULT_SECURE_TEST_ID = "secure_test_page"
 DEFAULT_COOKIE_AUTH_ID = "sql_cookie_auth"
 DEFAULT_MIGRATION_SQL_ID = "zsql_pas_classic_acl_users_migration"
+DEFAULT_MIGRATION_TABLES_ID = "zsql_pas_classic_migration_tables"
 DEFAULT_PASSWORD_HASH_ID = "authencoding"
 DEFAULT_TOTP_ISSUER = "Zope SQL Users"
 MODE_MANAGED = "managed"
@@ -42,6 +43,58 @@ def classic_acl_users_migration_template(dialect="existing_postgresql", tables=N
         "arguments": "",
         "template": template,
     }
+
+
+def classic_acl_users_migration_status_templates(
+    dialect="existing_postgresql", tables=None
+):
+    tables = tables or DEFAULT_TABLES
+    if dialect == "existing_oracle":
+        table_query = oracle_classic_acl_users_migration_tables_sql(tables)
+    else:
+        table_query = postgresql_classic_acl_users_migration_tables_sql(tables)
+    return {
+        "tables": {
+            "id": DEFAULT_MIGRATION_TABLES_ID,
+            "title": "Classic acl_users migration table status",
+            "arguments": "",
+            "template": table_query,
+        }
+    }
+
+
+def _migration_table_names(tables):
+    return (
+        "pas_users_migrated",
+        "pas_user_roles_migrated",
+        tables["profiles"],
+        tables["roles"],
+        tables["users"],
+        tables["user_roles"],
+    )
+
+
+def oracle_classic_acl_users_migration_tables_sql(tables=None):
+    tables = tables or DEFAULT_TABLES
+    names = ", ".join(
+        f"upper('{name}')" for name in sorted(set(_migration_table_names(tables)))
+    )
+    return f"""select table_name
+from user_tables
+where table_name in ({names})
+order by table_name"""
+
+
+def postgresql_classic_acl_users_migration_tables_sql(tables=None):
+    tables = tables or DEFAULT_TABLES
+    names = ", ".join(
+        f"'{name.lower()}'" for name in sorted(set(_migration_table_names(tables)))
+    )
+    return f"""select table_name
+from information_schema.tables
+where table_schema = current_schema()
+  and lower(table_name) in ({names})
+order by table_name"""
 
 
 def oracle_classic_acl_users_migration_sql(tables=None):

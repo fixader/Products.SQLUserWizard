@@ -15,6 +15,7 @@ from .config import (
     DEFAULT_INFO_ID,
     DEFAULT_MANIFEST_ID,
     DEFAULT_MIGRATION_SQL_ID,
+    DEFAULT_MIGRATION_TABLES_ID,
     DEFAULT_PAS_ID,
     DEFAULT_LOGIN_FORM_ID,
     DEFAULT_LOGIN_SUBMIT_ID,
@@ -32,6 +33,7 @@ from .config import (
     ROLES_SCRIPT,
     auth_only_templates,
     classic_acl_users_migration_template,
+    classic_acl_users_migration_status_templates,
 )
 from .dialects import (
     managed_templates,
@@ -202,6 +204,10 @@ class SQLUserWizardInstaller:
                 plugin,
                 classic_acl_users_migration_template(self.dialect, self.tables),
             )
+            for spec in classic_acl_users_migration_status_templates(
+                self.dialect, self.tables
+            ).values():
+                self._upsert_zsql_method(plugin, spec)
             return
 
         for spec in managed_templates(self.dialect, self.tables).values():
@@ -1149,6 +1155,7 @@ Editable logout wrapper. It clears PAS credentials and returns to the login form
                 if key != "get_profile"
             ]
             zsql_methods.append(DEFAULT_MIGRATION_SQL_ID)
+            zsql_methods.append(DEFAULT_MIGRATION_TABLES_ID)
             admin_path = None
         else:
             profile_methods = [
