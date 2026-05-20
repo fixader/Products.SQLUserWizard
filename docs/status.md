@@ -20,6 +20,9 @@ product-owned tables for each database:
 
 Auth-only mode has been smoke-tested against existing Zope-style PostgreSQL and
 Oracle user/role tables. In auth-only mode the generated SQL is read-only.
+This is a proof/diagnostic mode. The built-in migration helper is intended for
+classic SQL-backed Zope `acl_users` replacements, not arbitrary external
+identity schemas.
 
 ## Verified on Zope 5.8.3
 
@@ -46,15 +49,21 @@ are deliberately synced into the generated profile layer.
 
 - Oracle 12c+ `fetch first 1 rows only` against a live Oracle 12c+ database.
 - SQL Server through the FreeTDS adapter variant.
-- A generalized, product-supported take-control/mapping workflow from
-  auth-only to managed mode.
+- More live classic `acl_users` takeover tests across existing Zope
+  PostgreSQL and Oracle databases.
+- A generalized, product-supported mapping workflow for arbitrary external
+  identity schemas is intentionally out of scope unless the project boundary
+  changes.
 
 ## Current Product Boundary
 
 The product supports mainstream Zope database-adapter scenarios through Z SQL
-Methods. It does not try to map arbitrary external identity schemas directly.
-For unrelated legacy systems, create a managed target model first, then import
-users and roles into that model with application-specific scripts.
+Methods. Auth-only can prove read-only authentication against an existing SQL
+source, but built-in migration is scoped to classic Zope `acl_users`-style
+user/role tables. The product does not try to map arbitrary external identity
+schemas directly. For unrelated legacy systems, create a managed target model
+first, then import users and roles into that model with application-specific
+scripts.
 
 For existing Zope applications, the wizard now includes a preflight checklist
 that calls out the security/profile/application-data split before install or

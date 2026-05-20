@@ -4,10 +4,17 @@ Products.SQLUserWizard deliberately supports a small number of practical
 migration paths. It should make common Zope authentication work predictable,
 not become a universal identity migration engine.
 
+`auth_only` mode is available in more than one workflow, but it is not a
+general migration promise. Treat it as a safe read-only proof that PAS can talk
+to an existing user source through Z SQL Methods. The product's built-in
+migration/take-control helper is aimed at old Zope SQL-backed `acl_users`
+replacements.
+
 ## Path 1: Existing Zope-style SQL user database
 
 Use this when the existing application already has tables that behave like an
-old SQL-backed `acl_users`:
+old SQL-backed `acl_users`. This is the intended target for the built-in
+migration helper:
 
 - one table with username/login and password
 - one table with username/user id and Zope role names
@@ -27,6 +34,12 @@ Recommended workflow:
 In `auth_only` mode the wizard must not create, alter, delete, insert, or
 update database rows. It is a read-only proof that PAS can authenticate against
 the existing user database.
+
+Passing auth-only means "authentication can be proven read-only"; it does not
+mean "these tables are safe to let the product maintain." The next step is only
+managed/take-control when the source schema is genuinely a classic Zope
+user/role model. If the source is a broader application schema, keep the proof
+and build an explicit import or sync path into product-owned tables.
 
 Before switching from auth-only to managed mode, classify the existing schema:
 
@@ -74,7 +87,10 @@ production installations choose their own application name.
 Use this when the source system is not Zope-like and does not already look like
 `users`/`roles` authentication data.
 
-Do not make the wizard map that schema directly. Instead:
+Do not make the wizard map that schema directly, even if auth-only can be made
+to read a username and password from it. Auth-only is useful here only as an
+experiment or temporary bridge, not as the product-supported migration path.
+Instead:
 
 1. Create the target Zope folder with a database connection and this product.
 2. Run managed mode and let the product create the target user/role model.

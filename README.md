@@ -26,10 +26,16 @@ login form, user admin, 2FA flow, profile tools, fallback users, status page,
 and manifest.
 
 Existing applications should start with `auth_only` mode and a snapshot or
-database backup. Auth-only is read-only and proves that login, password
-format, role lookup, SQL dialect, and adapter choice work before the wizard is
-allowed to alter or maintain tables. Only switch to managed/take-control mode
-after the security/profile/application-data split is understood.
+database backup. Auth-only is a read-only proof and diagnostic mode: it proves
+that login, password format, role lookup, SQL dialect, and adapter choice work
+before the wizard is allowed to alter or maintain tables. It is useful even
+when no migration will be performed.
+
+The built-in migration helper is narrower on purpose. It is intended for old
+Zope SQL-backed `acl_users`-style tables, not arbitrary external identity
+schemas. Only switch from auth-only to managed/take-control mode after the
+existing tables have been classified as Zope user/role data and after the
+security/profile/application-data split is understood.
 
 Editable install from a checkout:
 
@@ -70,7 +76,8 @@ Runtime dependencies:
 - supports managed SQL schemas for PostgreSQL, SQLite, MySQL/MariaDB,
   Microsoft SQL Server, Oracle 11g-style SQL, and Oracle 12c+ SQL
 - supports read-only auth-only proof mode for existing Zope-style PostgreSQL
-  and Oracle user/role tables
+  and Oracle user/role tables; auth-only is diagnostic and does not mean the
+  schema is safe to migrate
 - installs form/cookie login, logout, secure test page, SQL user admin, and a
   manager-readable status page
 - supports password hashes through Zope `AuthEncoding`, with plain-password
@@ -154,9 +161,11 @@ Products.SQLUserWizard is aimed at two practical Zope use cases:
    access from the start.
 
 It is not intended to be a universal identity migration tool for arbitrary
-external applications. For unrelated legacy schemas, create a new product-owned
-SQL user model first, then write application-specific import scripts into that
-model.
+external applications. The supported built-in migration target is the classic
+Zope pattern: SQL tables originally used as an `acl_users` replacement, with
+recognizable username/password and username/role data. For unrelated legacy
+schemas, create a new product-owned SQL user model first, then write
+application-specific import scripts into that model.
 
 ## Supported migration paths
 
@@ -174,7 +183,14 @@ read-only through Z SQL Methods. This proves that the database adapter,
 SQL dialect, username/password lookup, password format, and role names work
 before the wizard is allowed to write anything.
 
-When the read-only proof is good, switch deliberately to a managed/take-control
+Auth-only is a tool, not a promise that the table layout should be taken over.
+The built-in migration/take-control helper is meant for old SQL-backed
+`acl_users` replacements. If the tables are really application tables that only
+happen to contain user-looking fields, keep auth-only as a proof and write an
+explicit import or sync path instead.
+
+When the read-only proof is good and the old tables are confirmed to be
+classic Zope user/role tables, switch deliberately to a managed/take-control
 path. That path is where the product may create or repair product-owned tables,
 install the SQL user admin, and maintain users, roles, passwords, enabled
 status, and profile rows.

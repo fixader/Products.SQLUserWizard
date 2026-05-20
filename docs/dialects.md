@@ -74,3 +74,10 @@ tested existing-schema variants:
 
 Auth-only SQL is read-only. It may fetch users, roles, and display profile
 values, but it must not create, alter, insert, update, or delete rows.
+
+Auth-only is deliberately useful before a decision has been made. It can prove
+that a connection, SQL dialect, username lookup, password format, and role
+lookup work. That proof alone does not make the source schema a supported
+migration target. The built-in migration/take-control path is for classic
+Zope SQL-backed `acl_users` replacements. Other schemas should be imported or
+synced into managed product-owned tables with local scripts.
