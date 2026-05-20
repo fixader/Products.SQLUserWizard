@@ -228,6 +228,9 @@ class SQLUserWizard(SimpleItem):
     .preflight code {{ background: #f6f7f9; padding: .1rem .25rem; }}
     .preflight pre {{ overflow: auto; padding: .85rem; background: #172033; color: #f8fafc; }}
     .migration-sql {{ margin-top: .85rem; }}
+    .zmi-links {{ display: flex; gap: .75rem; flex-wrap: wrap; margin-top: .75rem; }}
+    .zmi-links a {{ color: #0b5c92; font-weight: 700; text-decoration: none; }}
+    .zmi-links a:hover {{ text-decoration: underline; }}
     .summary {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin-top: 1rem; }}
     .summary div {{ background: #fff; border: 1px solid #d5dbe3; padding: .85rem; }}
     .summary strong {{ display: block; margin-bottom: .25rem; }}
@@ -246,6 +249,10 @@ class SQLUserWizard(SimpleItem):
       Methods. Use auth-only as a read-only proof against an existing
       Zope-style user database, or managed mode when this product should own
       the user and role tables.</p>
+      <nav class="zmi-links">
+        <a href="{self._zmi_parent_workspace_url()}">Back to containing folder</a>
+        <a href="{self._zmi_root_workspace_url()}">Zope root</a>
+      </nav>
     </header>
     {message}
     {preflight}
@@ -357,6 +364,15 @@ class SQLUserWizard(SimpleItem):
   </main>
 </body>
 </html>"""
+
+    def _zmi_parent_workspace_url(self):
+        parent = getattr(self, "aq_parent", None)
+        if parent is not None and hasattr(parent, "absolute_url_path"):
+            return escape(f"{parent.absolute_url_path()}/manage_workspace")
+        return "../manage_workspace"
+
+    def _zmi_root_workspace_url(self):
+        return "/manage_workspace"
 
     def _render_preflight(self):
         groups = self._preflight_groups()
