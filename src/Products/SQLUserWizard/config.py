@@ -129,9 +129,9 @@ begin
         create table {profiles} as
         select
             cast(username as varchar2(80)) as user_id,
-            cast(firstname as varchar2(80)) as first_name,
-            cast(lastname as varchar2(80)) as last_name,
-            cast(trim(firstname || '' '' || lastname) as varchar2(160)) as display_name,
+            cast(nullif(firstname, ''None'') as varchar2(80)) as first_name,
+            cast(nullif(lastname, ''None'') as varchar2(80)) as last_name,
+            cast(nullif(trim(nullif(firstname, ''None'') || '' '' || nullif(lastname, ''None'')), '''') as varchar2(160)) as display_name,
             cast(null as varchar2(255)) as email,
             cast(null as varchar2(40)) as mobile,
             sysdate as created_at,
@@ -186,9 +186,9 @@ from {users};
 create table {profiles} as
 select
     username::varchar(80) as user_id,
-    firstname::varchar(80) as first_name,
-    lastname::varchar(80) as last_name,
-    trim(concat(firstname, ' ', lastname))::varchar(160) as display_name,
+    nullif(firstname, 'None')::varchar(80) as first_name,
+    nullif(lastname, 'None')::varchar(80) as last_name,
+    nullif(trim(concat(nullif(firstname, 'None'), ' ', nullif(lastname, 'None'))), '')::varchar(160) as display_name,
     null::varchar(255) as email,
     null::varchar(40) as mobile,
     current_timestamp as created_at,

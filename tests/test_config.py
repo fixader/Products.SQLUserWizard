@@ -192,3 +192,13 @@ def test_classic_acl_users_migration_template_is_runnable_zsql():
     assert "create table pas_users_migrated" in spec["template"].lower()
     assert "from users" in spec["template"].lower()
     assert "from roles" in spec["template"].lower()
+
+
+def test_classic_acl_users_migration_treats_literal_none_as_empty_profile_data():
+    oracle = classic_acl_users_migration_template("existing_oracle", DEFAULT_TABLES)
+    postgresql = classic_acl_users_migration_template("existing_postgresql", DEFAULT_TABLES)
+
+    assert "nullif(firstname, ''None'')" in oracle["template"]
+    assert "nullif(lastname, ''None'')" in oracle["template"]
+    assert "nullif(firstname, 'None')" in postgresql["template"]
+    assert "nullif(lastname, 'None')" in postgresql["template"]
