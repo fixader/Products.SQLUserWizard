@@ -47,6 +47,17 @@ def test_managed_user_table_uses_zope_friendly_username_column():
     assert "login_name varchar" not in templates["setup_users"]["template"]
 
 
+def test_postgresql_security_repair_backfills_username_from_old_login_name():
+    templates = postgresql_templates({**DEFAULT_TABLES, "users": "legacy_users"})
+    repair = templates["setup_user_security_columns"]["template"].lower()
+
+    assert "add column if not exists username varchar(80)" in repair
+    assert "lower(column_name) = 'login_name'" in repair
+    assert "set username = login_name" in repair
+    assert "alter column login_name drop not null" in repair
+    assert "legacy_users_username_idx" in repair
+
+
 def test_postgresql_templates_use_zsql_parameter_binding():
     templates = postgresql_templates(DEFAULT_TABLES)
 

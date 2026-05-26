@@ -55,7 +55,7 @@ class SQLUserLoginSubmit(SimpleItem):
             request=REQUEST,
         )
         if status == "enroll":
-            pas.updateCredentials(REQUEST, response, login, password)
+            self._update_credentials(pas, REQUEST, response, login, password)
             query = urlencode({"came_from": came_from})
             response.redirect(f"{self.aq_parent.absolute_url()}/{self._admin_id()}/my_2fa?{query}")
             return ""
@@ -70,9 +70,39 @@ class SQLUserLoginSubmit(SimpleItem):
             response.redirect(f"{self.aq_parent.absolute_url()}/{DEFAULT_LOGIN_FORM_ID}?{query}")
             return ""
 
-        pas.updateCredentials(REQUEST, response, login, password)
+        self._update_credentials(pas, REQUEST, response, login, password)
         response.redirect(came_from)
         return ""
+
+    def _update_credentials(self, pas, request, response, login, password):
+        """Set PAS cookie credentials without response double-encoding.
+
+        PAS CookieAuthHelper pre-quotes the value before calling setCookie.
+        Some Zope response layers quote the percent signs again, so base64
+        padding becomes %253D%253D instead of %3D%3D. Cookie extraction decodes
+        only once and rejects the padded cookie.
+        """
+
+        helper = getattr(pas, "sql_cookie_auth", None)
+        if helper is None or not hasattr(helper, "get_cookie_value"):
+            pas.updateCredentials(request, response, login, password)
+            return
+
+        cookie_value = helper.get_cookie_value(login, password)
+        if isinstance(cookie_value, bytes):
+            cookie_value = cookie_value.decode("ascii")
+
+        cookie_secure = (
+            getattr(helper, "cookie_same_site", "") == "None"
+            or bool(getattr(helper, "cookie_secure", False))
+        )
+        response.setCookie(
+            getattr(helper, "cookie_name", "sql_user_auth"),
+            cookie_value,
+            path="/",
+            same_site=getattr(helper, "cookie_same_site", "Lax"),
+            secure=cookie_secure,
+        )
 
     def _check_credentials(self, plugin, login, password, otp_code, pas=None, request=None):
         if not login or not password:

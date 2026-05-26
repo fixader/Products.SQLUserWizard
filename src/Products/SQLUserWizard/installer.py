@@ -9,6 +9,7 @@ from .config import (
     AUTHENTICATE_SCRIPT,
     DEFAULT_ADMIN_ID,
     DEFAULT_COOKIE_AUTH_ID,
+    ENUMERATE_USERS_SCRIPT,
     DEFAULT_FALLBACK_LOGIN,
     DEFAULT_FALLBACK_ROLE_PLUGIN_ID,
     DEFAULT_FALLBACK_USER_PLUGIN_ID,
@@ -162,12 +163,30 @@ class SQLUserWizardInstaller:
                 )
             else:
                 self.result.action(f"Using existing PAS {self.pas_id}")
+                self._bind_pas_to_folder(existing)
                 return existing
 
         product = self.folder.manage_addProduct["PluggableAuthService"]
         product.addPluggableAuthService(self.pas_id)
         self.result.action(f"Created PAS {self.pas_id}")
-        return getattr(self.folder, self.pas_id)
+        pas = getattr(self.folder, self.pas_id)
+        self._bind_pas_to_folder(pas)
+        return pas
+
+    def _bind_pas_to_folder(self, pas):
+        """Ensure the local PAS is the folder's active user folder.
+
+        Zope authenticates through the container's __allow_groups__ hook, not
+        merely through an object named acl_users. Copied/imported folders can
+        contain a valid PAS named acl_users without that hook pointing to it.
+        Re-running the wizard should repair that binding.
+        """
+
+        try:
+            pas.manage_afterAdd(pas, self.folder)
+        except Exception:
+            self.folder.__allow_groups__ = aq_base(pas)
+        self.result.action(f"Bound {self.pas_id} as local user folder")
 
     def _backup_existing_user_folder(self):
         base_id = f"{self.pas_id}_zodb_backup"
@@ -262,6 +281,13 @@ class SQLUserWizardInstaller:
             "Authenticate SQL credentials",
             "credentials",
             AUTHENTICATE_SCRIPT,
+        )
+        self._upsert_python_script(
+            plugin,
+            "enumerateUsers",
+            "Enumerate SQL users for PAS",
+            "id=None, login=None, exact_match=0, sort_by=None, max_results=None, **kw",
+            ENUMERATE_USERS_SCRIPT,
         )
         self._upsert_python_script(
             plugin,
@@ -1208,6 +1234,13 @@ Editable logout wrapper. It clears PAS credentials and returns to the login form
                 "Authentication works without the wizard object after setup. "
                 "This manifest is for repair, diagnosis, and humans."
             ),
+            "zope5_repairs": {
+                "binds_pas_as_local_user_folder": True,
+                "sets_pas_cookie_without_response_double_encoding": True,
+                "requires_sql_user_enumeration": True,
+                "postgresql_backfills_username_from_login_name": True,
+                "version_scope": "Verified in the lab where standard PAS CookieAuthHelper pre-quotes the cookie value before Zope response rendering.",
+            },
         }
         self._upsert_text_object(
             pas,
@@ -1352,12 +1385,21 @@ user data.</p>
 </table>
 <h2>Authentication Flow</h2>
 <p>Credentials are checked by <code>{self.plugin_id}/authenticateCredentials</code>.
-Roles are loaded by <code>{self.plugin_id}/getRolesForPrincipal</code>.</p>
+The same plugin must also expose <code>enumerateUsers</code> and be active as a
+User Enumeration plugin; otherwise PAS may accept credentials without being
+able to build the authenticated principal for later requests. Roles are loaded
+by <code>{self.plugin_id}/getRolesForPrincipal</code>.</p>
 <p><code>{DEFAULT_COOKIE_AUTH_ID}</code> is installed as a Cookie Auth Helper,
 and points PAS challenges to <code>{DEFAULT_LOGIN_FORM_ID}</code>.
 <code>{DEFAULT_LOGOUT_ID}</code> clears PAS credentials and returns to the
 login form. Basic Auth remains available while the form flow is matured for
 2FA.</p>
+<p>The wizard uses the PAS Cookie Auth Helper, but the login submit object writes
+the helper's raw cookie value to avoid response double-encoding of base64
+padding. The wizard also rebinds <code>{self.pas_id}</code> as the folder's
+local user folder on repair, because Zope authenticates through
+<code>__allow_groups__</code> and not merely through an object named
+<code>{self.pas_id}</code>.</p>
 <p><code>{DEFAULT_SECURE_TEST_ID}</code> is an authenticated diagnostic page
 for checking the current user, roles, profile lookup, cookie login, and logout.</p>
 <h2>Data Model</h2>

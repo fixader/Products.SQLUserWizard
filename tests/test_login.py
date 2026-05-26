@@ -248,3 +248,39 @@ def test_login_submit_carries_came_from_to_enrollment_page():
         "http://zope.local/App/sql_user_admin/my_2fa"
         f"?came_from={quote_plus(came_from)}"
     )
+
+
+def test_login_submit_sets_sql_cookie_without_prequoting_padding():
+    class FakeCookieHelper:
+        cookie_name = "sql_user_auth"
+        cookie_same_site = "Lax"
+        cookie_secure = False
+
+        def get_cookie_value(self, login, password):
+            assert (login, password) == ("testkunde", "testkunde123")
+            return b"NzQ2NTczNzQ2Yjc1NmU2NDY1Ojc0NjU3Mzc0NmI3NTZlNjQ2NTMxMzIzMw=="
+
+    class FakePas:
+        sql_cookie_auth = FakeCookieHelper()
+
+        def updateCredentials(self, request, response, login, password):
+            raise AssertionError("Cookie helper should be written without prequoting")
+
+    class FakeResponse:
+        def setCookie(self, name, value, **kw):
+            self.cookie = (name, value, kw)
+
+    response = FakeResponse()
+    SQLUserLoginSubmit()._update_credentials(
+        FakePas(),
+        {},
+        response,
+        "testkunde",
+        "testkunde123",
+    )
+
+    assert response.cookie == (
+        "sql_user_auth",
+        "NzQ2NTczNzQ2Yjc1NmU2NDY1Ojc0NjU3Mzc0NmI3NTZlNjQ2NTMxMzIzMw==",
+        {"path": "/", "same_site": "Lax", "secure": False},
+    )

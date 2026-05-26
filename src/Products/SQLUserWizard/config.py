@@ -242,6 +242,7 @@ def postgresql_templates(tables=None):
             "title": "Repair PAS SQL users security columns",
             "arguments": "",
             "template": f"""alter table {users}
+    add column if not exists username varchar(80),
     add column if not exists password_hash_id varchar(40) not null default 'plain',
     add column if not exists totp_required boolean not null default false,
     add column if not exists totp_enabled boolean not null default false,
@@ -249,7 +250,23 @@ def postgresql_templates(tables=None):
     add column if not exists recovery_email varchar(255),
     add column if not exists created_at timestamp not null default current_timestamp,
     add column if not exists updated_at timestamp not null default current_timestamp,
-    add column if not exists last_login_at timestamp""",
+    add column if not exists last_login_at timestamp;
+
+do $$
+begin
+    if exists (
+        select 1
+        from information_schema.columns
+        where table_schema = current_schema()
+          and lower(table_name) = lower('{users}')
+          and lower(column_name) = 'login_name'
+    ) then
+        execute 'update {users} set username = login_name where username is null and login_name is not null';
+        execute 'alter table {users} alter column login_name drop not null';
+    end if;
+end $$;
+
+create unique index if not exists {users}_username_idx on {users}(username)""",
         },
         "setup_profiles": {
             "id": "zsql_pas_setup_profiles",
@@ -677,6 +694,78 @@ for user in users:
     return (user.user_id, user.login_name)
 
 return None
+"""
+
+ENUMERATE_USERS_SCRIPT = """def as_list(value):
+    if value is None or value == '':
+        return []
+    if same_type(value, ()) or same_type(value, []):
+        return value
+    return [value]
+
+def user_info(user):
+    user_id = str(getattr(user, 'user_id', '') or getattr(user, 'login_name', ''))
+    login_name = str(getattr(user, 'login_name', '') or user_id)
+    title = str(getattr(user, 'display_name', '') or login_name)
+    return {'id': user_id, 'login': login_name, 'title': title}
+
+ids = as_list(id)
+logins = as_list(login)
+results = []
+seen = {}
+
+if ids or logins:
+    lookup_values = ids + logins
+    for value in lookup_values:
+        try:
+            users = context.zsql_pas_get_user(user_id=value)
+        except Exception:
+            users = []
+        for user in users:
+            info = user_info(user)
+            if exact_match:
+                wanted = str(value).lower()
+                if info['id'].lower() != wanted and info['login'].lower() != wanted:
+                    continue
+            if info['id'] not in seen:
+                seen[info['id']] = 1
+                results.append(info)
+else:
+    try:
+        users = context.zsql_pas_list_users()
+    except Exception:
+        users = []
+    for user in users:
+        info = user_info(user)
+        if info['id'] not in seen:
+            seen[info['id']] = 1
+            results.append(info)
+
+if not exact_match and (ids or logins):
+    terms = [str(v).lower() for v in ids + logins]
+    filtered = []
+    for info in results:
+        haystack = (info['id'] + ' ' + info['login'] + ' ' + info.get('title', '')).lower()
+        for term in terms:
+            if term in haystack:
+                filtered.append(info)
+                break
+    results = filtered
+
+if sort_by:
+    decorated = []
+    for info in results:
+        decorated.append((str(info.get(sort_by, '')).lower(), info))
+    decorated.sort()
+    results = [item[1] for item in decorated]
+
+if max_results:
+    try:
+        results = results[:int(max_results)]
+    except Exception:
+        pass
+
+return tuple(results)
 """
 
 ROLES_SCRIPT = """roles = []

@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(
     name="Products.SQLUserWizard",
-    version="0.1.0a1",
+    version="0.1.0a2",
     description="Zope PAS SQL user wizard",
     packages=find_namespace_packages("src"),
     package_dir={"": "src"},

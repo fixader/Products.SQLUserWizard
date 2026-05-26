@@ -19,6 +19,7 @@ from Products.PluggableAuthService.interfaces.plugins import IUserEnumerationPlu
 
 PAS_PLUGIN_INTERFACES = (
     ("IAuthenticationPlugin", IAuthenticationPlugin),
+    ("IUserEnumerationPlugin", IUserEnumerationPlugin),
     ("IRolesPlugin", IRolesPlugin),
 )
 

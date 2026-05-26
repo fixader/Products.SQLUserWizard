@@ -14,7 +14,7 @@ Verified combinations, known gaps, and migration boundaries are tracked in
 
 ## Installation
 
-The current package version is `0.1.0a1`. The `a1` suffix is deliberate: this
+The current package version is `0.1.0a2`. The `a2` suffix is deliberate: this
 is an alpha release line, ready for controlled use in new/lab installations,
 but still expected to change as more Zope 5 and Zope 6 installations are tested.
 
