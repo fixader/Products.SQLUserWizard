@@ -10,7 +10,8 @@ It is usable enough for controlled testing, review, and further development,
 but it should still be treated as a product in active development.
 
 Verified combinations, known gaps, and migration boundaries are tracked in
-[Current Status](docs/status.md).
+[Current Status](docs/status.md). Release notes and lab verification history
+are tracked in [Changelog](CHANGELOG.md).
 
 ## Installation
 
