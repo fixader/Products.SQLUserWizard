@@ -13,9 +13,12 @@ install confidence.
   credentials but failing to construct the authenticated principal on the next
   request.
 - Kept the PAS Cookie Auth Helper as the login mechanism, but changed the
-  generated login submit object to write the helper's raw cookie value. This
-  avoids response double-encoding of base64 padding, where `%3D%3D` could become
-  `%253D%253D` and make the next request anonymous.
+  generated login submit object to write the helper's raw cookie value. PAS
+  `CookieAuthHelper.updateCredentials` pre-quotes the base64 cookie value; if
+  SQLUserWizard does not read the raw value and writes the pre-quoted value
+  through Zope's response layer, `%3D%3D` padding can become double-encoded as
+  `%253D%253D`. PAS then unquotes only once during extraction, rejects the
+  cookie, and the next request becomes anonymous.
 - Rebound existing local `acl_users` objects during install/repair so copied or
   imported folders do not silently keep using a parent user folder.
 - Added a narrow PostgreSQL repair for early managed SQLUserWizard tables:
