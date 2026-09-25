@@ -6,17 +6,15 @@ from OFS.SimpleItem import SimpleItem
 
 from .config import (
     DEFAULT_FALLBACK_LOGIN,
-    DEFAULT_MIGRATION_SQL_ID,
-    DEFAULT_MIGRATION_TABLES_ID,
     DEFAULT_TABLES,
     DEFAULT_TOTP_ISSUER,
     DEFAULT_WIZARD_ID,
-    MODE_AUTH_ONLY,
     MODE_MANAGED,
-    classic_acl_users_migration_template,
 )
 from .compat import InitializeClass
+from .security import require_post, protect_forms
 from .installer import SQLUserWizardInstaller
+from Acquisition import aq_base
 
 
 class SQLUserWizard(SimpleItem):
@@ -57,18 +55,11 @@ class SQLUserWizard(SimpleItem):
             REQUEST.RESPONSE.setHeader("Content-Type", "text/html; charset=utf-8")
 
         message = ""
-        if REQUEST is not None and REQUEST.get("prepare_managed_migration"):
-            self._capture_form_values(REQUEST)
-            self._prepare_managed_migration()
-            message = self._format_notice(
-                "Managed migration prepared",
-                "Run the starter SQL against a database copy, verify the new "
-                "tables, then run Install / Repair SQL PAS in managed mode.",
-            )
-        elif REQUEST is not None and REQUEST.get("check_migration_status"):
-            self._capture_form_values(REQUEST)
-            message = self._format_migration_status()
-        elif REQUEST is not None and REQUEST.get("run_wizard"):
+        upgrade_error = getattr(aq_base(self.aq_parent), "_sqluw_upgrade_error", "") if hasattr(self, "aq_parent") else ""
+        if upgrade_error:
+            message = self._format_notice("Upgrade needs attention", upgrade_error)
+        if REQUEST is not None and REQUEST.get("run_wizard"):
+            require_post(self, REQUEST)
             self._capture_form_values(REQUEST)
             fallback_password = REQUEST.get("fallback_password", "")
             result = self.install_or_repair(
@@ -77,12 +68,11 @@ class SQLUserWizard(SimpleItem):
             )
             message = self._format_result(result)
 
-        return self._render_form(message)
+        return protect_forms(self, REQUEST, self._render_form(message))
 
     def _capture_form_values(self, REQUEST):
         self.connection_id = REQUEST.get("connection_id", self.connection_id)
         self.dialect = REQUEST.get("dialect", self.dialect)
-        self.mode = REQUEST.get("mode", self.mode)
         self.users_table = REQUEST.get("users_table", self.users_table)
         self.profiles_table = REQUEST.get("profiles_table", self.profiles_table)
         self.roles_table = REQUEST.get("roles_table", self.roles_table)
@@ -98,14 +88,6 @@ class SQLUserWizard(SimpleItem):
         self.seed_standard_roles = bool(REQUEST.get("seed_standard_roles", ""))
         self.totp_issuer = REQUEST.get("totp_issuer", self.totp_issuer)
 
-    def _prepare_managed_migration(self):
-        self.mode = MODE_MANAGED
-        if self.dialect == "existing_oracle":
-            self.dialect = "oracle11g"
-        elif self.dialect == "existing_postgresql":
-            self.dialect = "postgresql"
-        self.users_table = "pas_users_migrated"
-        self.user_roles_table = "pas_user_roles_migrated"
 
     def _format_notice(self, title, body):
         return (
@@ -113,84 +95,6 @@ class SQLUserWizard(SimpleItem):
             f"{escape(title)}</h2><p>{escape(body)}</p></section>"
         )
 
-    def _format_migration_status(self):
-        try:
-            rows = self._migration_table_rows()
-        except Exception as exc:
-            return self._format_notice(
-                "Migration status unavailable",
-                "Run auth-only Install / Repair first, open the database "
-                f"connection, then try again. Details: {exc}",
-            )
-
-        existing = {str(getattr(row, "table_name", "")).lower() for row in rows}
-        expected = self._expected_migration_tables()
-        old_tables = {self.users_table.lower(), self.user_roles_table.lower()}
-        new_tables = {"pas_users_migrated", "pas_user_roles_migrated"}
-        support_tables = {self.profiles_table.lower(), self.roles_table.lower()}
-
-        missing_old = sorted(old_tables - existing)
-        existing_new = sorted(new_tables & existing)
-        missing_new = sorted(new_tables - existing)
-        existing_support = sorted(support_tables & existing)
-        missing_support = sorted(support_tables - existing)
-
-        items = []
-        if missing_old:
-            items.append(
-                "Classic source table(s) missing: "
-                + ", ".join(f"<code>{escape(name)}</code>" for name in missing_old)
-            )
-        if existing_support and missing_new:
-            items.append(
-                "Support table name collision before migration: "
-                + ", ".join(f"<code>{escape(name)}</code>" for name in existing_support)
-                + ". Use different support table names or remove/rename those tables "
-                "before running the starter SQL."
-            )
-        if missing_new:
-            items.append(
-                "Managed takeover is not ready yet. Missing migrated table(s): "
-                + ", ".join(f"<code>{escape(name)}</code>" for name in missing_new)
-            )
-        if missing_support:
-            items.append(
-                "Support table(s) not present yet: "
-                + ", ".join(f"<code>{escape(name)}</code>" for name in missing_support)
-            )
-        if not missing_old and not missing_new and not missing_support:
-            items.append(
-                "Ready for managed takeover. Press "
-                "<strong>Prepare wizard for managed takeover</strong>, then run "
-                "<strong>Install / Repair SQL PAS</strong>."
-            )
-
-        seen = ", ".join(f"<code>{escape(name)}</code>" for name in sorted(existing))
-        expected_text = ", ".join(
-            f"<code>{escape(name)}</code>" for name in sorted(expected)
-        )
-        return (
-            "<section class='result'><h2>Classic migration status</h2>"
-            f"<p class='note'>Expected tables checked: {expected_text}</p>"
-            f"<p class='note'>Existing matching tables: {seen or 'none'}</p>"
-            "<ul class='clean-list warnings'>"
-            + "".join(f"<li>{item}</li>" for item in items)
-            + "</ul></section>"
-        )
-
-    def _migration_table_rows(self):
-        plugin = self.aq_parent.acl_users.sql_auth
-        return list(getattr(plugin, DEFAULT_MIGRATION_TABLES_ID)())
-
-    def _expected_migration_tables(self):
-        return {
-            "pas_users_migrated",
-            "pas_user_roles_migrated",
-            self.profiles_table.lower(),
-            self.roles_table.lower(),
-            self.users_table.lower(),
-            self.user_roles_table.lower(),
-        }
 
     security.declareProtected(manage_users, "manage_workspace")
 
@@ -208,9 +112,11 @@ class SQLUserWizard(SimpleItem):
 
     security.declareProtected(manage_users, "install_or_repair")
 
-    def install_or_repair(self, fallback_password="", initial_password=""):
+    def install_or_repair(self, fallback_password="", initial_password="", REQUEST=None):
         """Install or repair the SQL-backed PAS setup in the parent folder."""
 
+        if REQUEST is not None:
+            require_post(self, REQUEST)
         tables = {
             "users": self.users_table,
             "profiles": self.profiles_table,
@@ -218,7 +124,7 @@ class SQLUserWizard(SimpleItem):
             "user_roles": self.user_roles_table,
         }
         initial_user = {}
-        if self.mode != MODE_AUTH_ONLY and self.initial_user_id.strip():
+        if self.initial_user_id.strip():
             initial_user = {
                 "user_id": self.initial_user_id.strip(),
                 "login_name": (
@@ -310,7 +216,6 @@ class SQLUserWizard(SimpleItem):
     .preflight strong {{ display: inline-block; min-width: 7.5rem; }}
     .preflight code {{ background: #f6f7f9; padding: .1rem .25rem; }}
     .preflight pre {{ overflow: auto; padding: .85rem; background: #172033; color: #f8fafc; }}
-    .migration-sql {{ margin-top: .85rem; }}
     .zmi-links {{ display: flex; gap: .75rem; flex-wrap: wrap; margin-top: .75rem; }}
     .zmi-links a {{ color: #0b5c92; font-weight: 700; text-decoration: none; }}
     .zmi-links a:hover {{ text-decoration: underline; }}
@@ -329,9 +234,8 @@ class SQLUserWizard(SimpleItem):
     <header>
       <h1>SQL User Wizard</h1>
       <p class="note">Install or repair a local PAS setup backed by Z SQL
-      Methods. Use auth-only as a read-only proof against an existing
-      Zope-style user database, or managed mode when this product should own
-      the user and role tables.</p>
+      Methods. The wizard creates its own user and role tables. Import any
+      old data separately after installation.</p>
       <nav class="zmi-links">
         <a href="{self._zmi_parent_workspace_url()}">Back to containing folder</a>
         <a href="{self._zmi_root_workspace_url()}">Zope root</a>
@@ -347,12 +251,6 @@ class SQLUserWizard(SimpleItem):
           <label>Connection id
             <input name="connection_id" value="{connection_id}">
           </label>
-          <label>Install mode
-            <select name="mode">
-              <option value="{MODE_MANAGED}" {'selected' if self.mode == MODE_MANAGED else ''}>Managed tables</option>
-              <option value="{MODE_AUTH_ONLY}" {'selected' if self.mode == MODE_AUTH_ONLY else ''}>Existing schema / auth-only</option>
-            </select>
-          </label>
           <label>SQL dialect
             <select name="dialect">
               <option value="postgresql" {'selected' if self.dialect == 'postgresql' else ''}>PostgreSQL managed</option>
@@ -361,8 +259,6 @@ class SQLUserWizard(SimpleItem):
               <option value="mssql" {'selected' if self.dialect == 'mssql' else ''}>Microsoft SQL Server managed</option>
               <option value="oracle11g" {'selected' if self.dialect in ('oracle', 'oracle11g') else ''}>Oracle 11g managed</option>
               <option value="oracle12c" {'selected' if self.dialect == 'oracle12c' else ''}>Oracle 12c+ managed</option>
-              <option value="existing_postgresql" {'selected' if self.dialect == 'existing_postgresql' else ''}>Existing PostgreSQL auth-only</option>
-              <option value="existing_oracle" {'selected' if self.dialect == 'existing_oracle' else ''}>Existing Oracle auth-only</option>
             </select>
           </label>
           <p class="help">Managed mode creates product-owned tables. Auth-only
@@ -400,8 +296,7 @@ class SQLUserWizard(SimpleItem):
               <input name="user_roles_table" value="{user_roles_table}">
             </label>
           </div>
-          <p class="help">For existing-schema auth-only, use <code>users</code> and
-          <code>roles</code>. Profile/user-role tables are ignored. Standard
+          <p class="help">Choose unused table names for a new installation. Standard
           role seeding creates missing <code>Manager</code>, <code>Owner</code>,
           <code>Authenticated</code>, and <code>Anonymous</code> role catalog
           rows without assigning them to users.</p>
@@ -432,16 +327,15 @@ class SQLUserWizard(SimpleItem):
               <input name="initial_roles" value="{initial_roles}">
             </label>
           </div>
-          <p class="help">Ignored in auth-only mode. Existing database users
-          are authenticated read-only. For unrelated legacy schemas, import
-          users into the managed model with custom scripts.</p>
+          <p class="help">Optionally create the first user in the new tables. Import existing
+          data yourself after installation.</p>
         </fieldset>
       </div>
       <button type="submit">Install / Repair SQL PAS</button>
     </form>
     <section class="summary">
       <div><strong>Local PAS</strong><code>acl_users</code> with SQL auth and cookie login.</div>
-      <div><strong>User Tools</strong>Managed mode installs admin/profile tools; auth-only installs read-only login and diagnostics.</div>
+      <div><strong>User Tools</strong>User administration, profiles and authenticator setup.</div>
       <div><strong>Mode</strong>{mode} / {dialect}</div>
     </section>
   </main>
@@ -468,121 +362,15 @@ class SQLUserWizard(SimpleItem):
             )
             sections.extend(f"<li>{item}</li>" for item in items)
             sections.append("</ul>")
-        migration_summary = (
-            self._render_auth_only_migration_summary()
-            if self.mode == MODE_AUTH_ONLY
-            else ""
-        )
         return f"""
     <section class="panel preflight">
       <h2>Preflight</h2>
-      <p class="note">Read this before running install/repair. Existing
-      databases may mix authentication fields, profile fields, and application
-      data in the same tables.</p>
+      <p class="note">New installations require unused table names. Repair only applies
+      to tables already owned by this installation.</p>
       {''.join(sections)}
-      {migration_summary}
     </section>
 """
 
-    def _render_auth_only_migration_summary(self):
-        users = escape(self.users_table)
-        roles = escape(self.user_roles_table)
-        profiles = escape(self.profiles_table)
-        catalog = escape(self.roles_table)
-        managed_dialect = escape(self._managed_migration_dialect())
-        sql = escape(self._auth_only_migration_sql())
-        return f"""
-      <h3>Classic acl_users Migration</h3>
-      <ul class="clean-list">
-        <li><strong>Recognized shape</strong> Auth-only expects
-        <code>{users}.username</code>, <code>{users}.password</code>,
-        <code>{roles}.username</code>, and <code>{roles}.role</code>. The
-        wizard maps <code>username</code> to its internal
-        <code>login_name</code>.</li>
-        <li><strong>Managed gap</strong> Managed mode additionally needs
-        <code>password_hash_id</code>, <code>enabled</code>,
-        <code>totp_required</code>, <code>totp_enabled</code>,
-        <code>totp_secret</code>, and <code>recovery_email</code> on users,
-        and role assignments as <code>user_id</code>/<code>role_id</code>.</li>
-        <li><strong>Profile split</strong> Fields such as
-        <code>firstname</code>, <code>lastname</code>, email, phone, theme,
-        language, company, notes, and other application data should move to
-        <code>{profiles}</code> or an application table, not stay in the
-        managed security table.</li>
-        <li><strong>Safer takeover</strong> Prefer creating managed
-        <code>pas_*</code> tables from the classic tables, then point the
-        wizard at those managed tables. Keep the old tables read-only until
-        the application has been tested.</li>
-      </ul>
-      <details class="migration-sql">
-        <summary>Suggested starter SQL for a classic acl_users migration</summary>
-        <p class="note">Review and run manually against a copy first. The SQL
-        assumes the classic table names currently entered above and creates
-        product-owned managed tables.</p>
-        <pre>{sql}</pre>
-      </details>
-      <form method="post" class="migration-sql">
-        {self._managed_migration_hidden_fields()}
-        <p class="note">After running and verifying the SQL, the wizard should
-        be switched to these managed settings: dialect
-        <code>{managed_dialect}</code>, users table
-        <code>pas_users_migrated</code>, profiles table
-        <code>{profiles}</code>, roles catalog table <code>{catalog}</code>,
-        and user roles table <code>pas_user_roles_migrated</code>.</p>
-        <p class="note">Install/repair also creates the same SQL as
-        <code>acl_users/sql_auth/{DEFAULT_MIGRATION_SQL_ID}</code>. Open that
-        Z SQL Method in ZMI and use its Test tab when you want Zope to run the
-        migration SQL through the selected database adapter. It also creates
-        <code>acl_users/sql_auth/{DEFAULT_MIGRATION_TABLES_ID}</code>, used by
-        the status check below.</p>
-        <button type="submit" name="check_migration_status" value="1">
-          Check migration status
-        </button>
-        <button type="submit" name="prepare_managed_migration" value="1">
-          Prepare wizard for managed takeover
-        </button>
-      </form>
-"""
-
-    def _managed_migration_dialect(self):
-        if self.dialect == "existing_oracle":
-            return "oracle11g"
-        if self.dialect == "existing_postgresql":
-            return "postgresql"
-        return self.dialect
-
-    def _managed_migration_hidden_fields(self):
-        fields = {
-            "connection_id": self.connection_id,
-            "dialect": self.dialect,
-            "mode": self.mode,
-            "users_table": self.users_table,
-            "profiles_table": self.profiles_table,
-            "roles_table": self.roles_table,
-            "user_roles_table": self.user_roles_table,
-            "fallback_login": self.fallback_login,
-            "initial_user_id": self.initial_user_id,
-            "initial_login_name": self.initial_login_name,
-            "initial_roles": self.initial_roles,
-            "totp_issuer": self.totp_issuer,
-        }
-        if self.seed_standard_roles:
-            fields["seed_standard_roles"] = "1"
-        return "\n".join(
-            f'<input type="hidden" name="{escape(name)}" value="{escape(str(value))}">'
-            for name, value in fields.items()
-        )
-
-    def _auth_only_migration_sql(self):
-        return classic_acl_users_migration_template(
-            self.dialect,
-            {
-                "users": self.users_table,
-                "profiles": self.profiles_table,
-                "roles": self.roles_table,
-                "user_roles": self.user_roles_table,
-            },
-        )["template"]
 
     def _preflight_groups(self):
         table_values = {
@@ -611,76 +399,11 @@ class SQLUserWizard(SimpleItem):
                 )
             normalized[key] = label
 
-        if self.mode == MODE_AUTH_ONLY:
-            checks.append(
-                "<strong>Auth-only</strong> Installs read-only Z SQL Methods "
-                "for authentication, role lookup, and profile display."
-            )
-            checks.append(
-                "<strong>No writes</strong> Auth-only mode must not create, "
-                "alter, update, delete, or insert database rows."
-            )
-            if not self.dialect.startswith("existing_"):
-                warnings.append(
-                    "<strong>Dialect</strong> Auth-only is meant for "
-                    "<code>existing_postgresql</code> or "
-                    "<code>existing_oracle</code>. Managed dialects are for "
-                    "product-owned tables."
-                )
-            checks.append(
-                "<strong>Managed later</strong> A green auth-only test proves "
-                "only <code>username</code>, <code>password</code>, and role "
-                "lookup. Managed mode also needs <code>password_hash_id</code>, "
-                "<code>enabled</code>, <code>totp_required</code>, "
-                "<code>totp_enabled</code>, <code>totp_secret</code>, and "
-                "<code>recovery_email</code> in the users table, plus a "
-                "<code>role_id</code>-based assignment table."
-            )
-        else:
-            checks.append(
-                "<strong>Managed</strong> Install/repair may create or alter "
-                "security tables and may update users, roles, profiles, and "
-                "2FA fields."
-            )
-            if self.dialect.startswith("existing_"):
-                warnings.append(
-                    "<strong>Mode mismatch</strong> Existing-schema dialects "
-                    "are read-only proofs. Use a managed dialect only when the "
-                    "product should own or repair the target tables."
-                )
-
-        application_named = [
-            value
-            for value in table_values.values()
-            if value and not value.strip().lower().startswith("pas_")
-        ]
-        if self.mode != MODE_AUTH_ONLY and application_named:
-            warnings.append(
-                "<strong>Existing names</strong> These table names do not look "
-                f"product-owned: <code>{escape(', '.join(application_named))}</code>. "
-                "Managed users require <code>user_id</code>, <code>username</code>, "
-                "<code>password</code>, <code>password_hash_id</code>, "
-                "<code>enabled</code>, and 2FA/recovery columns. Managed role "
-                "assignments require <code>user_id</code> and <code>role_id</code>. "
-                "Before repair, separate identity/security fields from editable "
-                "profile fields and application-only data."
-            )
-
-        if self.mode != MODE_AUTH_ONLY:
-            checks.append(
-                "<strong>Profile split</strong> Keep passwords, enabled status, "
-                "2FA, and recovery data in the users table. Put first name, "
-                "last name, display name, email, and mobile in the profiles "
-                "table unless the application deliberately syncs selected "
-                "fields elsewhere."
-            )
-            checks.append(
-                "<strong>App data</strong> Internal notes, employment status, "
-                "business roles, addresses, dates, avatar blobs, and other "
-                "domain fields belong to application tables. Do not expose them "
-                "through self-service profile forms without an explicit sync rule."
-            )
-
+        checks.append("The wizard creates its own users, roles, assignments and profile tables.")
+        checks.append("Import old data separately after installation; inherited fallback users are preserved.")
+        checks.append("Security fields stay in users; editable profile fields stay in profiles.")
+        if self.mode != MODE_MANAGED or self.dialect.startswith("existing_"):
+            errors.append("This saved setup uses a retired mode. Create a new wizard in a new folder with unused tables.")
         return (
             ("danger", "Stop First", errors),
             ("warnings", "Review", warnings),
@@ -699,6 +422,8 @@ def manage_addSQLUserWizard(self, id=DEFAULT_WIZARD_ID, title="", REQUEST=None):
 
         return manage_addSQLUserWizardForm(self, REQUEST)
 
+    if REQUEST is not None:
+        require_post(self, REQUEST)
     wizard = SQLUserWizard(id)
     wizard.title = title or "SQL User Wizard"
     self._setObject(id, wizard)

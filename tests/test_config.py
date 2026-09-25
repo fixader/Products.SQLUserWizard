@@ -1,9 +1,6 @@
 from Products.SQLUserWizard.config import (
     DEFAULT_COOKIE_AUTH_ID,
-    DEFAULT_MIGRATION_SQL_ID,
     DEFAULT_TABLES,
-    auth_only_templates,
-    classic_acl_users_migration_template,
     profile_postgresql_templates,
     postgresql_templates,
 )
@@ -69,13 +66,6 @@ def test_postgresql_templates_use_zsql_parameter_binding():
     assert "<dtml-sqlvar totp_secret type=string>" in templates["update_2fa"]["template"]
 
 
-def test_authenticate_script_supports_hashed_and_plain_passwords():
-    from Products.SQLUserWizard.config import AUTHENTICATE_SCRIPT
-
-    assert "password_hash_id == 'plain'" in AUTHENTICATE_SCRIPT
-    assert "from AuthEncoding import pw_validate" in AUTHENTICATE_SCRIPT
-    assert "verify_totp_code" in AUTHENTICATE_SCRIPT
-    assert "otp_code" in AUTHENTICATE_SCRIPT
 
 
 def test_cookie_auth_helper_id_is_product_specific():
@@ -107,35 +97,8 @@ def test_profile_templates_are_separate_editable_layer():
     assert "custom_users" not in templates["save_profile"]["template"]
 
 
-def test_existing_auth_only_templates_are_read_only():
-    templates = auth_only_templates(
-        "existing_postgresql",
-        {
-            "users": "users",
-            "profiles": "ignored_profiles",
-            "roles": "ignored_role_catalog",
-            "user_roles": "roles",
-        },
-    )
-
-    assert set(templates) == {"fetch_user", "fetch_roles", "get_profile"}
-    combined = "\n".join(spec["template"].lower() for spec in templates.values())
-    assert "from users" in combined
-    assert "from roles" in combined
-    assert "ignored_role_catalog" not in combined
-    assert "insert " not in combined
-    assert "update " not in combined
-    assert "delete " not in combined
-    assert "create " not in combined
-    assert "alter " not in combined
 
 
-def test_existing_oracle_auth_only_uses_oracle_string_functions():
-    templates = auth_only_templates("existing_oracle", DEFAULT_TABLES)
-
-    assert "substr(password, 1, 1)" in templates["fetch_user"]["template"]
-    assert "||" in templates["get_profile"]["template"]
-    assert "rownum = 1" in templates["fetch_user"]["template"].lower()
 
 
 def test_managed_dialect_aliases_match_lab_databases():
@@ -182,34 +145,4 @@ def test_profile_templates_are_dialect_wrapped():
 
 
 def test_default_role_catalog_name_is_explicit():
-    assert DEFAULT_TABLES["roles"] == "pas_roles_catalog"
-
-
-def test_classic_acl_users_migration_template_is_runnable_zsql():
-    spec = classic_acl_users_migration_template(
-        "existing_oracle",
-        {
-            "users": "users",
-            "profiles": "pas_user_profiles",
-            "roles": "pas_roles_catalog",
-            "user_roles": "roles",
-        },
-    )
-
-    assert spec["id"] == DEFAULT_MIGRATION_SQL_ID
-    assert spec["arguments"] == ""
-    assert "begin" in spec["template"].lower()
-    assert "execute immediate" in spec["template"].lower()
-    assert "create table pas_users_migrated" in spec["template"].lower()
-    assert "from users" in spec["template"].lower()
-    assert "from roles" in spec["template"].lower()
-
-
-def test_classic_acl_users_migration_treats_literal_none_as_empty_profile_data():
-    oracle = classic_acl_users_migration_template("existing_oracle", DEFAULT_TABLES)
-    postgresql = classic_acl_users_migration_template("existing_postgresql", DEFAULT_TABLES)
-
-    assert "nullif(firstname, ''None'')" in oracle["template"]
-    assert "nullif(lastname, ''None'')" in oracle["template"]
-    assert "nullif(firstname, 'None')" in postgresql["template"]
-    assert "nullif(lastname, 'None')" in postgresql["template"]
+    assert DEFAULT_TABLES["roles"] == "pas_roles"

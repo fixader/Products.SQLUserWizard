@@ -1,5 +1,7 @@
+from .security import protect_forms
+
 def manage_addSQLUserWizardForm(self, REQUEST=None):
-    return """<html>
+    return protect_forms(self, REQUEST, """<html>
 <head>
   <title>Add SQL User Wizard</title>
 </head>
@@ -19,11 +21,11 @@ def manage_addSQLUserWizardForm(self, REQUEST=None):
   <input type="submit" value="Add">
 </form>
 </body>
-</html>"""
+</html>""")
 
 
 def manage_addSQLUserAdminForm(self, REQUEST=None):
-    return """<html>
+    return protect_forms(self, REQUEST, """<html>
 <head>
   <title>Add SQL User Admin</title>
 </head>
@@ -43,4 +45,4 @@ def manage_addSQLUserAdminForm(self, REQUEST=None):
   <input type="submit" value="Add">
 </form>
 </body>
-</html>"""
+</html>""")

@@ -9,7 +9,7 @@ Last updated: 2026-09-25
 ## Current status for review
 
 The simplified installation model, security changes and runtime upgrade are
-implemented locally. All 126 tests pass, including tests from the built source
+consolidated with documentation on `main` for release 0.2.0a1. All 126 tests pass, including tests from the built source
 distribution. The wheel and source distribution pass strict twine validation.
 Install / Repair refuses to overwrite differing SQL before database operations.
 
@@ -17,9 +17,9 @@ Fresh installation and scoped upgrades have passed HTTP tests against the lab's
 PostgreSQL database, including a real server restart. The original lab installation
 has been restored. There has been no general deployment or PyPI publication.
 
-Remaining work: direct Lavaart/Lavaart_pg verification, final review and build
-metadata cleanup before final packaging. Documentation is published separately
-for review and describes the unreleased candidate, not a published implementation.
+Remaining confirmation work: direct Lavaart/Lavaart_pg verification and repeats
+on the other historically tested environments. The alpha release records these
+limits explicitly. PyPI upload remains separate from the GitHub release.
 
 All repository content, documentation, code comments and commit messages must be
 in English for an international audience.

@@ -215,7 +215,7 @@ where user_id = <dtml-sqlvar user_id type=string>""",
             "template": f"""update {users}
 set
     totp_required = {required_expr},
-    totp_enabled = {enabled_expr},
+    totp_enabled = {enabled_expr.replace('sqlvar enabled ', 'sqlvar totp_enabled ')},
     totp_secret = <dtml-sqlvar totp_secret type=string>,
     updated_at = {_current_timestamp(normalized)}
 where user_id = <dtml-sqlvar user_id type=string>""",

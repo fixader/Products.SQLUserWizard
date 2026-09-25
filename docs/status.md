@@ -81,14 +81,18 @@ Still requiring validation: a direct upgrade of Lavaart/Lavaart_pg. Install /
 Repair now refuses differing SQL source, arguments and connection settings before
 any database calls; three regression cases cover this guard.
 
-## Distribution candidate
+## Release artifacts
 
 - Built wheel and source distribution for 0.2.0a1 using an isolated build.
 - Both artifacts pass `twine check --strict`.
 - All 126 tests also pass from the unpacked source distribution, including the
   frozen legacy fixture. Wheel product modules match the current source files.
 - Source distribution includes upgrade documentation and test fixtures.
-- Build reports setuptools deprecation warnings for legacy license metadata;
-  these still need cleanup before the final build.
-- Nothing has been uploaded to PyPI. Documentation may be published for review
-  ahead of the implementation; it describes the unreleased candidate.
+- Build reports setuptools deprecation warnings for legacy license metadata.
+  The older format is retained for Python 3.8/buildout compatibility; it does
+  not prevent building or strict twine validation. Revisit this when changing
+  the minimum Python/build backend versions.
+- Source modules also parse with Python 3.8 grammar; this does not substitute
+  for runtime testing on Python 3.8 / Zope 5.
+- Code and documentation are consolidated on `main` for release `v0.2.0a1`.
+  PyPI upload is a separate publication step, not implied by the GitHub release.

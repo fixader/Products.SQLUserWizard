@@ -4,7 +4,7 @@ All notable changes to Products.SQLUserWizard are tracked here. The project is
 still in alpha, so entries include lab verification notes when they affect
 install confidence.
 
-## 0.2.0a1 - unreleased
+## 0.2.0a1 - 2026-09-25
 
 ### Changed
 

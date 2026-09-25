@@ -41,12 +41,15 @@ def verify_totp_code(secret, code, for_time=None, period=30, digits=6, window=1)
     """Accept a current TOTP code, allowing one step of clock drift by default."""
 
     clean_code = "".join(str(code or "").split())
-    if not clean_code:
+    if len(clean_code) != digits or not clean_code.isascii() or not clean_code.isdigit():
         return False
 
     now = time.time() if for_time is None else for_time
     for offset in range(-window, window + 1):
-        expected = totp_code(secret, now + (offset * period), period, digits)
+        try:
+            expected = totp_code(secret, now + (offset * period), period, digits)
+        except (ValueError, TypeError, struct.error):
+            return False
         if hmac.compare_digest(expected, clean_code):
             return True
     return False

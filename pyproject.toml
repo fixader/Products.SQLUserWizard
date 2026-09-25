@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "Products.SQLUserWizard"
-version = "0.1.0a2"
+version = "0.2.0a1"
 description = "A Zope wizard that configures PAS SQL users through Z SQL Methods."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -36,7 +36,12 @@ classifiers = [
 [project.optional-dependencies]
 test = [
   "pytest",
+  "tomli; python_version < '3.11'",
 ]
+
+[project.urls]
+Source = "https://github.com/fixader/Products.SQLUserWizard"
+Issues = "https://github.com/fixader/Products.SQLUserWizard/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

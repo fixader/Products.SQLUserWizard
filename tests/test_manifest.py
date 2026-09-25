@@ -33,6 +33,6 @@ def test_default_tables_are_explicit():
     assert DEFAULT_TABLES == {
         "users": "pas_users",
         "profiles": "pas_user_profiles",
-        "roles": "pas_roles_catalog",
+        "roles": "pas_roles",
         "user_roles": "pas_user_roles",
     }

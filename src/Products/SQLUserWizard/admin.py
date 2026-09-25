@@ -9,6 +9,8 @@ from OFS.SimpleItem import SimpleItem
 from zExceptions import Unauthorized
 
 from .compat import InitializeClass
+from .security import require_post, protect_forms, safe_redirect
+from .sessions import fingerprint
 from .config import (
     DEFAULT_ADMIN_ID,
     DEFAULT_TOTP_ISSUER,
@@ -19,6 +21,8 @@ from .config import (
     DEFAULT_PROFILE_GET_ID,
     DEFAULT_PROFILE_SAVE_ID,
     DEFAULT_LOGOUT_ID,
+    DEFAULT_COOKIE_AUTH_ID,
+    DEFAULT_LOGIN_SUBMIT_ID,
 )
 from .sqladmin import (
     delete_sql_user,
@@ -62,6 +66,8 @@ class SQLUserAdmin(SimpleItem):
             REQUEST.RESPONSE.setHeader("Content-Type", "text/html; charset=utf-8")
 
         message = ""
+        if REQUEST is not None and any(REQUEST.get(key) for key in ("delete_user", "save_user", "save_role")):
+            require_post(self, REQUEST)
         if REQUEST is not None and REQUEST.get("delete_user"):
             try:
                 self._delete_from_request(REQUEST)
@@ -88,7 +94,7 @@ class SQLUserAdmin(SimpleItem):
         if REQUEST is not None and not REQUEST.get("delete_user"):
             selected_user_id = REQUEST.get("user_id", "")
 
-        return self._render(message, selected_user_id, REQUEST)
+        return protect_forms(self, REQUEST, self._render(message, selected_user_id, REQUEST))
 
     security.declareProtected(manage_users, "manage_workspace")
 
@@ -118,6 +124,7 @@ class SQLUserAdmin(SimpleItem):
 
         message = ""
         if REQUEST is not None and REQUEST.get("save_profile"):
+            require_post(self, REQUEST)
             try:
                 self._save_profile_from_request(user_id, REQUEST)
             except Exception as exc:
@@ -126,7 +133,7 @@ class SQLUserAdmin(SimpleItem):
                 message = self._message("Profile saved", "ok")
 
         user = self._get_user_with_profile(user_id)
-        return self._render_profile_page(user, message, REQUEST)
+        return protect_forms(self, REQUEST, self._render_profile_page(user, message, REQUEST))
 
     security.declareProtected(view, "my_2fa")
 
@@ -146,16 +153,28 @@ class SQLUserAdmin(SimpleItem):
 
         came_from = self._safe_came_from(REQUEST)
         message = ""
+        if REQUEST is not None and any(REQUEST.get(key) for key in ("reset_totp", "confirm_totp", "disable_totp")):
+            require_post(self, REQUEST)
+            if self._truthy(getattr(user, "totp_enabled", False)):
+                if not verify_totp_code(user.totp_secret, REQUEST.form.get("otp_code", "")):
+                    raise Unauthorized("A current authenticator code is required")
+            if REQUEST.get("disable_totp") and self._truthy(getattr(user, "totp_required", False)):
+                raise Unauthorized("Two-factor authentication is required for this account")
         if REQUEST is not None and REQUEST.get("reset_totp"):
             secret = generate_totp_secret()
             self._update_user_totp(user_id, enabled=False, secret=secret)
             message = self._message("New authenticator setup code created", "ok")
             user = self._get_user_with_profile(user_id)
+            self._refresh_session(REQUEST, user, scope="enroll")
+            target = f"{self.aq_parent.absolute_url()}/{DEFAULT_LOGIN_SUBMIT_ID}/enroll"
+            REQUEST.RESPONSE.redirect(self._with_came_from(target, came_from))
+            return ""
         elif REQUEST is not None and REQUEST.get("confirm_totp"):
             secret = normalize_totp_secret(getattr(user, "totp_secret", ""))
             code = REQUEST.get("otp_code", "")
             if secret and verify_totp_code(secret, code):
                 self._update_user_totp(user_id, enabled=True, secret=secret)
+                self._refresh_session(REQUEST, self._get_user_with_profile(user_id))
                 if came_from:
                     REQUEST.RESPONSE.redirect(came_from)
                     return ""
@@ -168,12 +187,29 @@ class SQLUserAdmin(SimpleItem):
             self._update_user_totp(user_id, enabled=False, secret=secret)
             message = self._message("Two-factor authentication is disabled", "ok")
             user = self._get_user_with_profile(user_id)
+            self._refresh_session(REQUEST, user)
 
-        return self._render_2fa_page(user, message, REQUEST)
+        return protect_forms(self, REQUEST, self._render_2fa_page(user, message, REQUEST))
+
+    security.declareProtected(view, "my_profile_data")
+
+    def my_profile_data(self):
+        """Return only the current user's display profile to templates."""
+        user_id = getSecurityManager().getUser().getId()
+        if not user_id or user_id == "Anonymous User":
+            raise Unauthorized("Login is required")
+        return getattr(self.aq_parent, DEFAULT_PROFILE_GET_ID)(user_id=user_id)
 
     def _plugin(self):
         pas = getattr(self.aq_parent, self.pas_id)
         return getattr(pas, self.plugin_id)
+
+    def _refresh_session(self, request, user, scope="full"):
+        # Use the auth row (not the joined display profile) for a stable stamp.
+        login = user.login_name
+        row = next(u for u in self._plugin().zsql_pas_fetch_user(login=login) if u.user_id == user.user_id)
+        helper = getattr(getattr(self.aq_parent, self.pas_id), DEFAULT_COOKIE_AUTH_ID)
+        helper._issue(request, row.user_id, login, fingerprint(row), scope=scope)
 
     def _save_user_from_request(self, REQUEST):
         user_id = REQUEST.get("edit_user_id") or REQUEST.get("user_id", "")
@@ -239,7 +275,7 @@ class SQLUserAdmin(SimpleItem):
     def _update_user_totp(self, user_id, enabled, secret):
         self._plugin().zsql_pas_update_2fa(
             user_id=user_id,
-            totp_required="",
+            totp_required="1" if self._truthy(getattr(self._get_user_with_profile(user_id), "totp_required", False)) else "",
             totp_enabled="1" if enabled else "",
             totp_secret=normalize_totp_secret(secret),
         )
@@ -600,7 +636,7 @@ class SQLUserAdmin(SimpleItem):
         enabled = self._truthy(getattr(user, "totp_enabled", False))
         secret = normalize_totp_secret(getattr(user, "totp_secret", ""))
         issuer = getattr(self, "totp_issuer", DEFAULT_TOTP_ISSUER) or DEFAULT_TOTP_ISSUER
-        uri = otpauth_uri(secret, login_name, issuer) if secret else ""
+        uri = otpauth_uri(secret, login_name, issuer) if secret and not enabled else ""
         qr_html = ""
         if uri:
             try:
@@ -625,6 +661,8 @@ class SQLUserAdmin(SimpleItem):
             if uri
             else "<p>No setup secret exists yet. Create one below.</p>"
         )
+        if enabled:
+            setup_block = "<p>Authenticator is active. Enter a current code to change its setup.</p>"
         return f"""<!doctype html>
 <html>
 <head>
@@ -784,19 +822,7 @@ class SQLUserAdmin(SimpleItem):
         if REQUEST is None:
             return ""
 
-        came_from = str(REQUEST.get("came_from", "") or "").strip()
-        if not came_from:
-            return ""
-
-        folder_url = self.aq_parent.absolute_url()
-        folder_path = self.aq_parent.absolute_url_path()
-        if came_from == folder_url or came_from.startswith(f"{folder_url}/"):
-            return came_from
-        if came_from == folder_path or came_from.startswith(f"{folder_path}/"):
-            return came_from
-        if came_from.startswith("/") and not came_from.startswith("//"):
-            return came_from
-        return ""
+        return safe_redirect(REQUEST.get("came_from", ""), self.aq_parent.absolute_url())
 
     def _admin_came_from(self, REQUEST):
         if REQUEST is None:
@@ -813,18 +839,7 @@ class SQLUserAdmin(SimpleItem):
         return came_from
 
     def _safe_local_url(self, url):
-        if not url:
-            return ""
-
-        folder_url = self.aq_parent.absolute_url()
-        folder_path = self.aq_parent.absolute_url_path()
-        if url == folder_url or url.startswith(f"{folder_url}/"):
-            return url
-        if url == folder_path or url.startswith(f"{folder_path}/"):
-            return url
-        if url.startswith("/") and not url.startswith("//"):
-            return url
-        return ""
+        return safe_redirect(url, self.aq_parent.absolute_url())
 
     def _is_admin_url(self, url):
         try:
@@ -868,6 +883,8 @@ def manage_addSQLUserAdmin(self, id=DEFAULT_ADMIN_ID, title="", REQUEST=None):
 
         return manage_addSQLUserAdminForm(self, REQUEST)
 
+    if REQUEST is not None:
+        require_post(self, REQUEST)
     admin = SQLUserAdmin(id)
     admin.title = title or "SQL User Admin"
     self._setObject(id, admin)

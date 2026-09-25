@@ -2,8 +2,9 @@
 
 A Zope product that creates a local SQL-backed PAS installation, with user
 administration, roles, profiles, authenticator 2FA and inherited fallback access.
-Version **0.2.0a1** is an unreleased alpha candidate. This documentation describes
-the candidate under development; see [release status](docs/status.md).
+Version **0.2.0a1** is an alpha release for controlled use and evaluation.
+See [verification status](docs/status.md) for tested environments and remaining
+confirmation work, and [release notes](docs/release-0.2.0a1.md) before upgrading.
 
 ## Why this exists
 
@@ -97,15 +98,24 @@ available if SQL is unavailable. Use distinct SQL and fallback ids/logins.
 ## Installation
 
 Use the Zope instance's Python environment. The commands below install the
-checked-out source version. This documentation branch is published ahead of the
-candidate implementation; cloning `main` does not yet install the described
-0.2.0a1 changes. No 0.2.0a1 package has been uploaded to PyPI.
+checked-out source version. For the exact release, select the `v0.2.0a1` tag:
 
 ```bash
 git clone https://github.com/fixader/Products.SQLUserWizard.git
 cd Products.SQLUserWizard
+git checkout v0.2.0a1
 pip install -e .
 ```
+
+Alternatively, install the tagged source directly:
+
+```bash
+pip install "Products.SQLUserWizard @ git+https://github.com/fixader/Products.SQLUserWizard.git@v0.2.0a1"
+```
+
+The GitHub release includes a wheel and source distribution. PyPI publication
+is separate; these instructions do not depend on a PyPI upload. For ongoing
+development, use `main` instead of the release tag.
 
 Install into the Zope instance environment, restart Zope, then add SQL User Wizard
 to the application folder. Select its database connection and dialect, set unused

@@ -15,8 +15,6 @@ from .config import (
     DEFAULT_FALLBACK_USER_PLUGIN_ID,
     DEFAULT_INFO_ID,
     DEFAULT_MANIFEST_ID,
-    DEFAULT_MIGRATION_SQL_ID,
-    DEFAULT_MIGRATION_TABLES_ID,
     DEFAULT_PAS_ID,
     DEFAULT_LOGIN_FORM_ID,
     DEFAULT_LOGIN_SUBMIT_ID,
@@ -29,12 +27,8 @@ from .config import (
     DEFAULT_SECURE_TEST_ID,
     DEFAULT_TABLES,
     DEFAULT_TOTP_ISSUER,
-    MODE_AUTH_ONLY,
     MODE_MANAGED,
     ROLES_SCRIPT,
-    auth_only_templates,
-    classic_acl_users_migration_template,
-    classic_acl_users_migration_status_templates,
 )
 from .dialects import (
     managed_templates,
@@ -98,39 +92,32 @@ class SQLUserWizardInstaller:
         self.admin_id = admin_id
         self.initial_user = initial_user or {}
         self.seed_roles = seed_roles
-        self.mode = mode or MODE_MANAGED
-        self.tables = tables or dict(DEFAULT_TABLES)
+        if mode != MODE_MANAGED:
+            raise ValueError("Existing SQL user databases are no longer supported. Create a new managed installation.")
+        self.mode = MODE_MANAGED
+        self.tables = dict(DEFAULT_TABLES) if tables is None else dict(tables)
         self.totp_issuer = totp_issuer or DEFAULT_TOTP_ISSUER
         self.result = InstallResult()
 
     def install(self):
+        from .schema import check_installation
+        check_installation(self)
         pas = self._ensure_pas()
         plugin = self._ensure_sql_plugin(pas)
         self._ensure_zsql_methods(plugin)
-        if self.mode == MODE_AUTH_ONLY:
-            self.result.action("Auth-only mode: skipped database schema changes")
-        else:
-            self._ensure_database_schema(plugin)
+        self._ensure_database_schema(plugin)
         self._ensure_plugin_scripts(plugin)
         self._activate_plugin_interfaces(plugin)
-        try:
-            self._ensure_cookie_auth_helper(pas)
-        except Exception as exc:
-            self.result.warning(
-                f"Could not install Cookie Auth Helper {DEFAULT_COOKIE_AUTH_ID}: {exc}"
-            )
+        self._ensure_cookie_auth_helper(pas)
         self._ensure_fallback_manager(pas)
         self._ensure_upstream_fallback_users(pas)
         self._activate_pas_registry(pas)
-        if self.mode == MODE_AUTH_ONLY:
-            self.result.action("Auth-only mode: skipped SQL user creation")
+        if self.seed_roles:
+            self._seed_standard_roles(plugin)
         else:
-            if self.seed_roles:
-                self._seed_standard_roles(plugin)
-            else:
-                self.result.action("Skipped standard Zope role seed")
-            self._ensure_initial_sql_user(plugin)
-            self._ensure_admin_tool()
+            self.result.action("Skipped standard Zope role seed")
+        self._ensure_initial_sql_user(plugin)
+        self._ensure_admin_tool()
         self._ensure_profile_zsql_methods()
         self._ensure_profile_template()
         self._ensure_profile_preview_template()
@@ -140,12 +127,14 @@ class SQLUserWizardInstaller:
         self._ensure_secure_test_page()
         self._ensure_manifest(pas)
         self._ensure_info_page(pas)
+        if "_sqluw_upgrade_error" in aq_base(self.folder).__dict__:
+            del self.folder._sqluw_upgrade_error
         return self.result
 
     def _ensure_pas(self):
         local_ids = set(self.folder.objectIds())
         if self.pas_id in local_ids:
-            existing = getattr(self.folder, self.pas_id, None)
+            existing = self._local_object(self.folder, self.pas_id)
         else:
             existing = None
 
@@ -200,7 +189,7 @@ class SQLUserWizardInstaller:
         return backup_id
 
     def _ensure_sql_plugin(self, pas):
-        existing = getattr(pas, self.plugin_id, None)
+        existing = self._local_object(pas, self.plugin_id)
         if existing is None:
             product = pas.manage_addProduct["PluggableAuthService"]
             product.addScriptablePlugin(
@@ -214,26 +203,16 @@ class SQLUserWizardInstaller:
         return existing
 
     def _ensure_zsql_methods(self, plugin):
-        if self.mode == MODE_AUTH_ONLY:
-            for spec in auth_only_templates(self.dialect, self.tables).values():
-                if spec["id"] == DEFAULT_PROFILE_GET_ID:
-                    continue
-                self._upsert_zsql_method(plugin, spec)
-            self._upsert_zsql_method(
-                plugin,
-                classic_acl_users_migration_template(self.dialect, self.tables),
-            )
-            for spec in classic_acl_users_migration_status_templates(
-                self.dialect, self.tables
-            ).values():
-                self._upsert_zsql_method(plugin, spec)
-            return
 
+        for old_id in ("zsql_pas_classic_acl_users_migration", "zsql_pas_classic_migration_tables"):
+            if old_id in plugin.objectIds():
+                plugin._delObject(old_id)
+                self.result.action(f"Removed obsolete method {old_id}")
         for spec in managed_templates(self.dialect, self.tables).values():
             self._upsert_zsql_method(plugin, spec)
 
     def _upsert_zsql_method(self, container, spec):
-        method = getattr(container, spec["id"], None)
+        method = self._local_object(container, spec["id"])
         if method is None:
             product = container.manage_addProduct["ZSQLMethods"]
             product.manage_addZSQLMethod(
@@ -244,6 +223,8 @@ class SQLUserWizardInstaller:
                 template=spec["template"],
             )
             self.result.action(f"Created Z SQL Method {spec['id']}")
+            method = getattr(container, spec["id"])
+            method.manage_permission("Use Database Methods", roles=(), acquire=0)
             return
 
         method.manage_edit(
@@ -252,6 +233,7 @@ class SQLUserWizardInstaller:
             arguments=spec["arguments"],
             template=spec["template"],
         )
+        method.manage_permission("Use Database Methods", roles=(), acquire=0)
         self.result.action(f"Updated Z SQL Method {spec['id']}")
 
     def _ensure_database_schema(self, plugin):
@@ -298,7 +280,7 @@ class SQLUserWizardInstaller:
         )
 
     def _upsert_python_script(self, container, script_id, title, params, body):
-        script = getattr(container, script_id, None)
+        script = self._local_object(container, script_id)
         if script is None:
             product = container.manage_addProduct["PythonScripts"]
             product.manage_addPythonScript(id=script_id)
@@ -624,29 +606,21 @@ class SQLUserWizardInstaller:
                 )
 
     def _ensure_cookie_auth_helper(self, pas):
-        existing = None
-        if DEFAULT_COOKIE_AUTH_ID in pas.objectIds():
-            existing = pas._getOb(DEFAULT_COOKIE_AUTH_ID)
-        if existing is not None:
-            self.result.action(f"Using existing Cookie Auth Helper {DEFAULT_COOKIE_AUTH_ID}")
-            self._configure_cookie_auth_helper(existing)
-            self._activate_cookie_auth_interfaces(existing)
-            return existing
-
-        from Products.PluggableAuthService.plugins.CookieAuthHelper import (
-            addCookieAuthHelper,
-        )
-
-        addCookieAuthHelper(
-            pas,
-            DEFAULT_COOKIE_AUTH_ID,
-            "SQL User Cookie Auth",
-            cookie_name="sql_user_auth",
-        )
-        self.result.action(f"Created Cookie Auth Helper {DEFAULT_COOKIE_AUTH_ID}")
-        helper = pas._getOb(DEFAULT_COOKIE_AUTH_ID)
+        from .sessions import SQLSessionHelper
+        helper = self._local_object(pas, DEFAULT_COOKIE_AUTH_ID)
+        if not isinstance(helper, SQLSessionHelper):
+            if helper is not None:
+                pas._delObject(DEFAULT_COOKIE_AUTH_ID)
+            pas._setObject(DEFAULT_COOKIE_AUTH_ID, SQLSessionHelper(DEFAULT_COOKIE_AUTH_ID))
+            helper = pas._getOb(DEFAULT_COOKIE_AUTH_ID)
+            self.result.action("Installed server-side login sessions; old cookies are invalid")
+        helper.sql_plugin_id = self.plugin_id
+        helper.fallback_plugin_id = self.fallback_user_plugin_id
         self._configure_cookie_auth_helper(helper)
         self._activate_cookie_auth_interfaces(helper)
+        # Authentication must recheck session revocation and current SQL security fields.
+        if hasattr(pas, "ZCacheable_setManagerId"):
+            pas.ZCacheable_setManagerId("")
         return helper
 
     def _configure_cookie_auth_helper(self, helper):
@@ -769,7 +743,9 @@ class SQLUserWizardInstaller:
         user_id = self.initial_user.get("user_id", "").strip()
         if not user_id:
             return
-
+        if list(plugin.zsql_pas_get_user(user_id=user_id)):
+            self.result.action(f"Kept existing initial SQL user {user_id}; use user admin to edit it")
+            return
         save_sql_user(plugin, **self.initial_user)
         self.result.action(f"Ensured initial SQL user {user_id}")
 
@@ -778,7 +754,7 @@ class SQLUserWizardInstaller:
         self.result.action("Ensured standard Zope roles in SQL role catalog")
 
     def _ensure_admin_tool(self):
-        existing = getattr(self.folder, self.admin_id, None)
+        existing = self._local_object(self.folder, self.admin_id)
         if existing is not None:
             self.result.action(f"Using existing SQL User Admin {self.admin_id}")
             if hasattr(existing, "totp_issuer"):
@@ -864,7 +840,7 @@ class SQLUserWizardInstaller:
         )
 
     def _ensure_login_submit(self):
-        existing = getattr(self.folder, DEFAULT_LOGIN_SUBMIT_ID, None)
+        existing = self._local_object(self.folder, DEFAULT_LOGIN_SUBMIT_ID)
         if existing is None:
             from .login import SQLUserLoginSubmit
 
@@ -877,7 +853,8 @@ class SQLUserWizardInstaller:
             self.result.action(f"Using existing login submit controller {DEFAULT_LOGIN_SUBMIT_ID}")
 
         if hasattr(existing, "pas_id"):
-            existing.pas_id = self.pas_id
+            existing.totp_issuer = self.totp_issuer
+        existing.pas_id = self.pas_id
         if hasattr(existing, "plugin_id"):
             existing.plugin_id = self.plugin_id
         self._configure_view_permission(existing, ["Anonymous"], 1)
@@ -894,7 +871,7 @@ class SQLUserWizardInstaller:
         view_roles=None,
         view_acquire=None,
     ):
-        existing = getattr(self.folder, object_id, None)
+        existing = self._local_object(self.folder, object_id)
         if existing is None:
             self.folder.manage_addProduct["OFSP"].manage_addDTMLMethod(
                 id=object_id,
@@ -922,19 +899,11 @@ class SQLUserWizardInstaller:
             obj.manage_permission(view, roles=roles, acquire=acquire)
 
     def _ensure_profile_zsql_methods(self):
-        if self.mode == MODE_AUTH_ONLY:
-            spec = auth_only_templates(self.dialect, self.tables)["get_profile"]
-            existing = getattr(self.folder, spec["id"], None)
-            if existing is not None:
-                self.result.action(f"Using existing auth-only Z SQL Method {spec['id']}")
-                return
-            self._upsert_zsql_method(self.folder, spec)
-            self.result.action(f"Created auth-only profile Z SQL Method {spec['id']}")
-            return
 
         for spec in profile_templates(self.dialect, self.tables).values():
-            existing = getattr(self.folder, spec["id"], None)
+            existing = self._local_object(self.folder, spec["id"])
             if existing is not None:
+                existing.manage_permission("Use Database Methods", roles=(), acquire=0)
                 self.result.action(f"Using existing editable Z SQL Method {spec['id']}")
                 continue
             self._upsert_zsql_method(self.folder, spec)
@@ -1007,8 +976,7 @@ new saved fields such as avatar requires adding storage and save handling too.
 
     def _default_login_template(self):
         profile_link = ""
-        if self.mode != MODE_AUTH_ONLY:
-            profile_link = f'<a href="{self.admin_id}/my_profile">My profile</a>'
+        profile_link = f'<a href="{self.admin_id}/my_profile">My profile</a>'
         return f"""<dtml-comment>
 SQLUSERWIZARD-MANAGED-LOGIN
 Editable form-login page. It posts to the SQL User Wizard login controller,
@@ -1078,6 +1046,7 @@ which validates password and optional TOTP before PAS receives credentials.
           <p class="notice">Authenticator code was not accepted. Check the current code and try again.</p>
         </dtml-if>
         <form method="post" action="{DEFAULT_LOGIN_SUBMIT_ID}">
+          <dtml-var expr="sql_user_login_submit.csrf_field(REQUEST)">
           <label for="__ac_name">Login</label>
           <input id="__ac_name" name="__ac_name" value="<dtml-var "REQUEST.get('__ac_name', '')" html_quote>" autocomplete="username" autofocus>
 
@@ -1094,7 +1063,7 @@ which validates password and optional TOTP before PAS receives credentials.
           {profile_link}
           <a href="{DEFAULT_LOGOUT_ID}">Log out</a>
         </nav>
-        <p class="muted">ZMI recovery can also use Basic Auth.</p>
+        <p class="muted">ZODB fallback accounts can also use Basic Auth for ZMI recovery.</p>
       </div>
     </section>
   </main>
@@ -1104,23 +1073,20 @@ which validates password and optional TOTP before PAS receives credentials.
 """
 
     def _default_logout_template(self):
-        return f"""<dtml-comment>
-SQLUSERWIZARD-MANAGED-LOGOUT
-Editable logout wrapper. It clears PAS credentials and returns to the login form.
-</dtml-comment>
-<dtml-call "acl_users.resetCredentials(REQUEST, RESPONSE)">
-<dtml-call "RESPONSE.redirect('{DEFAULT_LOGIN_FORM_ID}')">
-"""
+        return '''<dtml-comment>SQLUSERWIZARD-MANAGED-LOGOUT</dtml-comment>
+<dtml-call expr="sql_user_login_submit.logout(REQUEST)">
+<form method="post">
+<dtml-var expr="sql_user_login_submit.csrf_field(REQUEST)">
+<button type="submit">Log out</button></form>'''
 
     def _default_secure_test_template(self):
         profile_link = ""
         separator = ""
-        if self.mode != MODE_AUTH_ONLY:
-            profile_link = (
-                f'<a href="{self.admin_id}/my_profile?came_from='
-                '<dtml-var "REQUEST.URL0" url_quote>">Edit my profile</a>'
-            )
-            separator = " | "
+        profile_link = (
+            f'<a href="{self.admin_id}/my_profile?came_from='
+            '<dtml-var "REQUEST.URL0" url_quote>">Edit my profile</a>'
+        )
+        separator = " | "
         return f"""<html>
 <head>
   <dtml-comment>SQLUSERWIZARD-MANAGED-SECURE-TEST</dtml-comment>
@@ -1143,7 +1109,7 @@ Editable logout wrapper. It clears PAS credentials and returns to the login form
     <tr><th>Roles</th><td><dtml-var "AUTHENTICATED_USER.getRoles()" html_quote></td></tr>
   </table>
   <h2>Profile Row</h2>
-  <dtml-in "sql_user_profile_get(user_id=AUTHENTICATED_USER.getId())" size="1">
+  <dtml-in "{self.admin_id}.my_profile_data()" size="1">
     <table>
       <tr><th>Display name</th><td><dtml-var display_name html_quote></td></tr>
       <tr><th>First name</th><td><dtml-var first_name html_quote></td></tr>
@@ -1173,28 +1139,18 @@ Editable logout wrapper. It clears PAS credentials and returns to the login form
         self.result.action(f"Prioritized {plugin_id} for {plugin_type}")
 
     def _ensure_manifest(self, pas):
-        if self.mode == MODE_AUTH_ONLY:
-            profile_methods = [DEFAULT_PROFILE_GET_ID]
-            zsql_methods = [
-                spec["id"]
-                for key, spec in auth_only_templates(self.dialect, self.tables).items()
-                if key != "get_profile"
-            ]
-            zsql_methods.append(DEFAULT_MIGRATION_SQL_ID)
-            zsql_methods.append(DEFAULT_MIGRATION_TABLES_ID)
-            admin_path = None
-        else:
-            profile_methods = [
-                spec["id"] for spec in profile_templates(self.dialect, self.tables).values()
-            ]
-            zsql_methods = [
-                spec["id"] for spec in managed_templates(self.dialect, self.tables).values()
-            ]
-            admin_path = f"{self.folder.absolute_url_path()}/{self.admin_id}"
+        profile_methods = [
+            spec["id"] for spec in profile_templates(self.dialect, self.tables).values()
+        ]
+        zsql_methods = [
+            spec["id"] for spec in managed_templates(self.dialect, self.tables).values()
+        ]
+        admin_path = f"{self.folder.absolute_url_path()}/{self.admin_id}"
 
         manifest = {
             "product": "Products.SQLUserWizard",
-            "version": "0.1.0",
+            "version": "0.2.0a1",
+            "runtime_revision": 2,
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "mode": self.mode,
             "folder_path": self.folder.absolute_url_path(),
@@ -1234,12 +1190,17 @@ Editable logout wrapper. It clears PAS credentials and returns to the login form
                 "Authentication works without the wizard object after setup. "
                 "This manifest is for repair, diagnosis, and humans."
             ),
+            "authentication": {
+                "server_side_sessions": True,
+                "full_session_seconds": 28800,
+                "enrollment_session_seconds": 600,
+                "sql_basic_auth": False,
+                "post_and_csrf_required": True,
+            },
             "zope5_repairs": {
                 "binds_pas_as_local_user_folder": True,
-                "sets_pas_cookie_without_response_double_encoding": True,
                 "requires_sql_user_enumeration": True,
                 "postgresql_backfills_username_from_login_name": True,
-                "version_scope": "Verified in the lab where standard PAS CookieAuthHelper pre-quotes the cookie value before Zope response rendering.",
             },
         }
         self._upsert_text_object(
@@ -1252,63 +1213,33 @@ Editable logout wrapper. It clears PAS credentials and returns to the login form
         self.result.action("Updated manifest")
 
     def _ensure_info_page(self, pas):
-        if self.mode == MODE_AUTH_ONLY:
-            admin_row = "<tr><th>User admin</th><td>Disabled in auth-only mode</td></tr>"
-            profile_save_row = (
-                "<tr><th>Editable profile save SQL</th>"
-                "<td>Disabled in auth-only mode</td></tr>"
-            )
-            profile_check = ""
-            data_model_note = (
-                f"<p>Auth-only mode reads existing <code>{self.tables['users']}</code> "
-                f"and <code>{self.tables['roles']}</code> tables. It does not create, "
-                "alter, delete, or update database rows.</p>"
-            )
-            maintenance_note = (
-                "<p>User maintenance is disabled in auth-only mode. Manage users in "
-                "the source application/database, not from this folder.</p>"
-            )
-            profile_form_section = f"""
-<h2>Profile Display</h2>
-<p><code>{DEFAULT_PROFILE_FORM_ID}</code> remains a manager-editable DTML Method
-so the secure test page can display non-security profile values from the
-existing database. In auth-only mode it is display-oriented: the wizard does
-not install profile save SQL or a local user self-service editor.</p>
-<p><code>{DEFAULT_PROFILE_PREVIEW_ID}</code> is a wrapper page for viewing the
-profile partial in ZMI with empty/demo values.</p>
-<p><code>{DEFAULT_PROFILE_GET_ID}</code> is the read-only Z SQL Method used for
-profile lookup. Keep application-specific profile maintenance in the source
-application/database until this folder is deliberately switched to a managed
-mode.</p>
-"""
-        else:
-            admin_row = (
-                f"<tr><th>User admin</th><td>{self.folder.absolute_url_path()}/"
-                f"{self.admin_id}</td></tr>"
-            )
-            profile_save_row = (
-                f"<tr><th>Editable profile save SQL</th><td>"
-                f"{self.folder.absolute_url_path()}/{DEFAULT_PROFILE_SAVE_ID}</td></tr>"
-            )
-            profile_check = (
-                f'  <li>Open <a href="{self.folder.absolute_url_path()}/'
-                f'{self.admin_id}/my_profile"><code>{self.admin_id}/my_profile'
-                "</code></a> and edit the current user's profile.</li>"
-            )
-            data_model_note = (
-                f"<p><code>{self.tables['users']}</code> stores security-critical "
-                f"identity fields. <code>{self.tables['profiles']}</code> stores "
-                f"editable profile fields. <code>{self.tables['roles']}</code> stores "
-                f"the role catalog, and <code>{self.tables['user_roles']}</code> stores "
-                "user-role assignments.</p>"
-            )
-            maintenance_note = (
-                f'<p>Use <a href="{self.folder.absolute_url_path()}/{self.admin_id}">'
-                f"<code>{self.admin_id}</code></a> to add users, change passwords, "
-                "assign roles, disable users, and edit profile fields. SQL developers "
-                "may also use the generated Z SQL Methods directly.</p>"
-            )
-            profile_form_section = f"""
+        admin_row = (
+            f"<tr><th>User admin</th><td>{self.folder.absolute_url_path()}/"
+            f"{self.admin_id}</td></tr>"
+        )
+        profile_save_row = (
+            f"<tr><th>Editable profile save SQL</th><td>"
+            f"{self.folder.absolute_url_path()}/{DEFAULT_PROFILE_SAVE_ID}</td></tr>"
+        )
+        profile_check = (
+            f'  <li>Open <a href="{self.folder.absolute_url_path()}/'
+            f'{self.admin_id}/my_profile"><code>{self.admin_id}/my_profile'
+            "</code></a> and edit the current user's profile.</li>"
+        )
+        data_model_note = (
+            f"<p><code>{self.tables['users']}</code> stores security-critical "
+            f"identity fields. <code>{self.tables['profiles']}</code> stores "
+            f"editable profile fields. <code>{self.tables['roles']}</code> stores "
+            f"the role catalog, and <code>{self.tables['user_roles']}</code> stores "
+            "user-role assignments.</p>"
+        )
+        maintenance_note = (
+            f'<p>Use <a href="{self.folder.absolute_url_path()}/{self.admin_id}">'
+            f"<code>{self.admin_id}</code></a> to add users, change passwords, "
+            "assign roles, disable users, and edit profile fields. SQL developers "
+            "may also use the generated Z SQL Methods directly.</p>"
+        )
+        profile_form_section = f"""
 <h2>Editable Profile Form</h2>
 <p>Generated editable DTML objects with <code>SQLUSERWIZARD-MANAGED-*</code>
 markers may be refreshed by wizard repair. Remove the marker, or make a clear
@@ -1392,14 +1323,12 @@ by <code>{self.plugin_id}/getRolesForPrincipal</code>.</p>
 <p><code>{DEFAULT_COOKIE_AUTH_ID}</code> is installed as a Cookie Auth Helper,
 and points PAS challenges to <code>{DEFAULT_LOGIN_FORM_ID}</code>.
 <code>{DEFAULT_LOGOUT_ID}</code> clears PAS credentials and returns to the
-login form. Basic Auth remains available while the form flow is matured for
-2FA.</p>
-<p>The wizard uses the PAS Cookie Auth Helper, but the login submit object writes
-the helper's raw cookie value to avoid response double-encoding of base64
-padding. The wizard also rebinds <code>{self.pas_id}</code> as the folder's
-local user folder on repair, because Zope authenticates through
-<code>__allow_groups__</code> and not merely through an object named
-<code>{self.pas_id}</code>.</p>
+login form after a protected POST. SQL users authenticate through the form;
+Basic Auth remains available for ZODB fallback recovery only.</p>
+<p>Login issues an opaque, revocable server-side session after password and
+2FA verification. Enrollment sessions cannot authenticate to PAS. No password
+is stored in the browser cookie. Security-field changes invalidate sessions.
+The wizard rebinds <code>{self.pas_id}</code> as the local user folder on repair.</p>
 <p><code>{DEFAULT_SECURE_TEST_ID}</code> is an authenticated diagnostic page
 for checking the current user, roles, profile lookup, cookie login, and logout.</p>
 <h2>Data Model</h2>
@@ -1407,9 +1336,8 @@ for checking the current user, roles, profile lookup, cookie login, and logout.<
 <h2>Fallback Access</h2>
 <p><code>{self.fallback_user_plugin_id}</code> and
 <code>{self.fallback_role_plugin_id}</code> are local ZODB fallback plugins.
-They are activated after the SQL plugin, so SQL authentication wins when a
-matching SQL user exists, while synced parent-folder users still work in the
-same folder.</p>
+Synced parent-folder users remain available independently of SQL authentication.
+Use distinct SQL and fallback identities to avoid overlapping role assignments.</p>
 <p>During install/repair the wizard also scans parent folders for local
 <code>{self.pas_id}</code> objects. Users whose stored password hash can be
 read are copied into <code>{self.fallback_user_plugin_id}</code> with their
@@ -1439,7 +1367,7 @@ and updates generated methods, but it does not delete user data.</p>
         self.result.action("Updated manager info page")
 
     def _upsert_text_object(self, container, object_id, title, text, content_type):
-        obj = getattr(container, object_id, None)
+        obj = self._local_object(container, object_id)
         if obj is None:
             container.manage_addProduct["OFSP"].manage_addDTMLMethod(
                 id=object_id,
@@ -1452,6 +1380,7 @@ and updates generated methods, but it does not delete user data.</p>
 
         if hasattr(obj, "content_type"):
             obj.content_type = content_type
+        obj.manage_permission(view, roles=["Manager"], acquire=0)
 
     def _object_source(self, obj):
         for name in ("raw", "_text"):
