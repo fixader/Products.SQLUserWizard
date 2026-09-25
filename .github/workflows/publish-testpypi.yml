@@ -1,0 +1,31 @@
+name: Publish alpha to TestPyPI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download verified 0.2.0a1 release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir dist
+          gh release download v0.2.0a1 --repo "$GITHUB_REPOSITORY" --dir dist \
+            --pattern 'products_sqluserwizard-0.2.0a1-py3-none-any.whl' \
+            --pattern 'products_sqluserwizard-0.2.0a1.tar.gz'
+          echo 'd1893a9105b7567b175b3a98d877f14132d999ad56ce736921d5b042ea9038de  dist/products_sqluserwizard-0.2.0a1-py3-none-any.whl' | sha256sum --check
+          echo '0d23b326d1a1e77d9d499712767386dd59146f5ccce8efda5f2eaed6204a65cb  dist/products_sqluserwizard-0.2.0a1.tar.gz' | sha256sum --check
+      - name: Publish to TestPyPI using trusted publishing
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
+        with:
+          repository-url: https://test.pypi.org/legacy/
