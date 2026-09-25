@@ -207,5 +207,6 @@ Implementation responsibilities:
 - `pas.py`: trusted PAS adapters around protected SQL methods.
 - `admin.py` / `sqladmin.py`: user/profile management and SQL operations.
 
-[Current task and progress](docs/task-managed-only-security.md) Â·
+[Current task and progress](docs/task-managed-only-security.md) ·
+[Invitation provisioning task](docs/task-script-provisioning-and-invitations.md) ·
 [Changelog](CHANGELOG.md)
