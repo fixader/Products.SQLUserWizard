@@ -4,6 +4,46 @@ All notable changes to Products.SQLUserWizard are tracked here. The project is
 still in alpha, so entries include lab verification notes when they affect
 install confidence.
 
+## 0.2.0a1 - unreleased
+
+### Changed
+
+- Removed existing-database/auth-only modes and generated migration SQL.
+- Every new installation creates its own four-table schema. The default role
+  catalog is now `pas_roles`; existing managed mappings are preserved on repair.
+- Added table-name validation, catalog collision checks and a manifest ownership
+  check before installation changes PAS or database objects.
+- Replaced password-bearing cookies with opaque, revocable ZODB sessions.
+  SQL users now use form login; inherited ZODB fallback access is preserved.
+- Added enrollment-only tokens that cannot authenticate to PAS, expiry,
+  authentication throttling and one-time-code replay rejection.
+- Added automatic runtime upgrade for recorded older managed installations, including completed migrations, with no SQL execution and isolated failure handling.
+- Split request security, sessions, schema checks and trusted PAS adapters into
+  separate modules while keeping persisted wizard/admin/controller class paths.
+
+### Fixed
+
+- Password-only PAS authentication can no longer bypass enabled SQL-user 2FA.
+- Mutating browser flows require POST and CSRF validation, and login redirects
+  are restricted to the same origin.
+- Generated SQL methods are no longer anonymously callable; status/manifest
+  objects are manager-readable.
+- Required 2FA cannot be disabled through self-service. Active secrets are not
+  redisplayed on the self-service page, and reset requires a current code.
+- Non-PostgreSQL 2FA updates now bind `totp_enabled` instead of the nonexistent
+  `enabled` argument.
+- Repair preserves existing initial-user passwords, role assignments and 2FA.
+- Runtime upgrade preserves locally adapted SQL and older `login_name` schemas.
+- Install / Repair refuses to overwrite differing SQL source, arguments or
+  connections before executing database operations.
+- ZMI constructor CSRF tokens survive recreation of the product factory dispatcher.
+
+### Verification
+
+- Added in-process Zope/PAS/SQLite integration tests and security regressions.
+- See `docs/status.md` for actual environment and results. Earlier live database
+  verification below belongs to the old authentication flow.
+
 ## 0.1.0a2 - 2026-05-26
 
 ### Fixed

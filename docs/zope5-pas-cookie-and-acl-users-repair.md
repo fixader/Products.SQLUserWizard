@@ -1,3 +1,5 @@
+> Historical notes for 0.1.0a2. Version 0.2 replaces credential cookies with server-side sessions; see [Upgrade](upgrade.md).
+
 # Zope 5 PAS Cookie And Local acl_users Repair
 
 Observed while verifying SQL User Wizard on Zope 5 and Zope 6 labs on

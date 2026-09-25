@@ -64,20 +64,14 @@ managed installations and run a harmless schema-repair no-op. Broader
 cross-database schema migration should be explicit and tested before it is made
 automatic.
 
-## Auth-only dialects
+## Installation boundary
 
-Auth-only mode is currently specialized for Zope-style legacy user tables, with
-tested existing-schema variants:
+Every dialect creates the same product-owned model. Table names must be distinct
+simple identifiers (letters, digits, underscores; start with a letter; maximum
+30 characters). Schema-qualified names are not supported: configure the adapter's
+default schema instead. New installations check the database catalog and reject
+name collisions before changing PAS or SQL objects. Repair requires the existing
+managed manifest and the same connection id, dialect and table mapping.
 
-- Existing PostgreSQL
-- Existing Oracle
-
-Auth-only SQL is read-only. It may fetch users, roles, and display profile
-values, but it must not create, alter, insert, update, or delete rows.
-
-Auth-only is deliberately useful before a decision has been made. It can prove
-that a connection, SQL dialect, username lookup, password format, and role
-lookup work. That proof alone does not make the source schema a supported
-migration target. The built-in migration/take-control path is for classic
-Zope SQL-backed `acl_users` replacements. Other schemas should be imported or
-synced into managed product-owned tables with local scripts.
+There is no existing-user-database mode or data migration generator. Import old
+data separately into the new model if needed.

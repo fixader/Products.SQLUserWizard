@@ -1,44 +1,39 @@
 # Products.SQLUserWizard
 
-Prototype Zope product for configuring a local PAS user folder backed by SQL
-through Z SQL Methods.
+A Zope product that creates a local SQL-backed PAS installation, with user
+administration, roles, profiles, authenticator 2FA and inherited fallback access.
+Version **0.2.0a1** is an unreleased alpha candidate. This documentation describes
+the candidate under development; see [release status](docs/status.md).
 
-## Development status
+## One installation model
 
-This is an early product version extracted from lab work on Zope 5 and Zope 6.
-It is usable enough for controlled testing, review, and further development,
-but it should still be treated as a product in active development.
+Choose a database connection, dialect and unused table names. The wizard creates
+its own schema in that database:
 
-Verified combinations, known gaps, and migration boundaries are tracked in
-[Current Status](docs/status.md). Release notes and lab verification history
-are tracked in [Changelog](CHANGELOG.md).
+| Purpose | Default table |
+| --- | --- |
+| Identity, passwords, enabled state and 2FA | `pas_users` |
+| Role catalog | `pas_roles` |
+| User-role assignments | `pas_user_roles` |
+| Editable display profile | `pas_user_profiles` |
+
+Names are configurable. New installations reject existing tables with those
+names. Repeated repair is allowed for the installation recorded in its managed
+manifest, using the same connection, dialect and table mapping.
+Repair stops before database work if existing generated SQL source, arguments
+or connection settings differ from the current templates; review such older or
+customized installations manually. Runtime upgrade preserves their SQL.
+
+The wizard does not connect authentication to an existing SQL user database and
+contains no data migration or takeover feature. Import your own old data into
+the new model separately, after installation. Application data stays outside the
+user/security model.
+
+Inherited Zope users are different: readable parent-folder users are still copied
+to the local ZODB fallback store. An optional emergency manager account remains
+available if SQL is unavailable. Use distinct SQL and fallback ids/logins.
 
 ## Installation
-
-The current package version is `0.1.0a2`. The `a2` suffix is deliberate: this
-is an alpha release line, ready for controlled use in new/lab installations,
-but still expected to change as more Zope 5 and Zope 6 installations are tested.
-
-The safest first use is a clean/new application folder with a database adapter
-already available through acquisition or created in that folder. Managed mode
-can then create its own `pas_users`, `pas_user_profiles`,
-`pas_roles_catalog`, and `pas_user_roles` tables and install the PAS objects,
-login form, user admin, 2FA flow, profile tools, fallback users, status page,
-and manifest.
-
-Existing applications should start with `auth_only` mode and a snapshot or
-database backup. Auth-only is a read-only proof and diagnostic mode: it proves
-that login, password format, role lookup, SQL dialect, and adapter choice work
-before the wizard is allowed to alter or maintain tables. It is useful even
-when no migration will be performed.
-
-The built-in migration helper is narrower on purpose. It is intended for old
-Zope SQL-backed `acl_users`-style tables, not arbitrary external identity
-schemas. Only switch from auth-only to managed/take-control mode after the
-existing tables have been classified as Zope user/role data and after the
-security/profile/application-data split is understood.
-
-Editable install from a checkout:
 
 ```bash
 git clone https://github.com/fixader/Products.SQLUserWizard.git
@@ -46,202 +41,64 @@ cd Products.SQLUserWizard
 pip install -e .
 ```
 
-Direct install from GitHub:
+Install into the Zope instance environment, restart Zope, then add SQL User Wizard
+to the application folder. Select its database connection and dialect, set unused
+table names, optionally supply the first SQL user and fallback manager, and run
+Install / Repair. The database adapter must be available in that folder or through
+acquisition and support Z SQL Methods.
+
+Runtime dependencies: Zope 5+, Products.PluggableAuthService,
+Products.ZSQLMethods and segno. `setup.py` remains for older buildout workflows.
+SQL templates cover PostgreSQL, SQLite, MySQL/MariaDB, SQL Server and Oracle
+11g/12c+. See [dialects](docs/dialects.md) and [verification status](docs/status.md)
+for the distinction between template support and live verification.
+
+For an existing installation, read [upgrade and repair](docs/upgrade.md) first.
+Normal Zope startup upgrades recorded managed installations without running SQL or changing their table mapping. Existing users must log in again.
+
+## Authentication and user tools
+
+- SQL users log in through the form, with an authenticator code when enabled.
+- A random browser cookie refers to a revocable server-side session in ZODB;
+  it contains no password. Full sessions last eight hours.
+- Users who must enroll in 2FA receive a ten-minute token that authorizes only
+  enrollment. It cannot authenticate to PAS until a code is confirmed.
+- Password, enabled-state and 2FA changes invalidate existing SQL sessions.
+- Login, logout, installation and user/profile/2FA changes use POST with a
+  browser-bound CSRF token. Redirects stay on the same origin.
+- Generated Z SQL Methods are called internally by product code; they are not
+  public browser endpoints. The status page and manifest are manager-readable.
+- User administration controls users, roles and security settings. Self-service
+  profiles expose display fields only; application data is not automatically
+  exposed to users.
+- SQL HTTP Basic login is disabled. ZODB fallback recovery is retained.
+
+The installation remains inspectable through its generated PAS objects, status
+page and manifest. Editable templates may be customized; repair preserves
+customized templates and reports them for review.
+
+## Development
 
 ```bash
-pip install "Products.SQLUserWizard @ git+https://github.com/fixader/Products.SQLUserWizard.git@main"
+pip install -e ".[test]"
+python -m pytest -q
 ```
 
-For a private repository, Git must already be authenticated to GitHub on the
-machine running `pip`.
+The integration tests run Zope/PAS in process with a disposable SQLite adapter.
+They exercise real Z SQL Methods, restricted PAS scripts, session authentication,
+2FA enrollment, fallback access and repair. They never connect to a production
+database. Tests against other live database engines remain a separate step.
 
-Buildout-style Zope 5 installations can keep using a `develop` checkout or run
-`pip install -e /path/to/Products.SQLUserWizard` inside the instance virtual
-environment. The repository keeps both `pyproject.toml` and `setup.py` because
-older buildout workflows still expect `setup.py`.
+Implementation responsibilities:
 
-Runtime dependencies:
+- `wizard.py`: setup form and orchestration.
+- `installer.py`: create/repair local Zope objects.
+- `schema.py`: identifiers, catalog checks and ownership boundary.
+- `config.py` / `dialects.py`: schema and query templates.
+- `login.py` / `sessions.py`: password/2FA verification and server sessions.
+- `security.py`: POST/CSRF and redirect validation.
+- `pas.py`: trusted PAS adapters around protected SQL methods.
+- `admin.py` / `sqladmin.py`: user/profile management and SQL operations.
 
-- `Zope>=5.0`
-- `Products.PluggableAuthService>=2.0`
-- `Products.ZSQLMethods`
-- `segno` for QR-code generation in the TOTP setup flow
-
-## Features
-
-- installs or repairs a local `acl_users` Pluggable Auth Service in a Zope
-  folder
-- authenticates users through generated Z SQL Methods, so the database adapter
-  can be OpenODBCDA, SQLAlchemyDA, or another Zope adapter that supports
-  Z SQL Methods
-- supports managed SQL schemas for PostgreSQL, SQLite, MySQL/MariaDB,
-  Microsoft SQL Server, Oracle 11g-style SQL, and Oracle 12c+ SQL
-- supports read-only auth-only proof mode for existing Zope-style PostgreSQL
-  and Oracle user/role tables; auth-only is diagnostic and does not mean the
-  schema is safe to migrate
-- installs form/cookie login, logout, secure test page, SQL user admin, and a
-  manager-readable status page
-- supports password hashes through Zope `AuthEncoding`, with plain-password
-  fallback for legacy/testing databases
-- supports optional per-user TOTP authenticator 2FA, including QR-code setup,
-  enrollment-required flow, and self-service activation
-- provides fallback ZODB users by syncing readable parent-folder users, plus an
-  optional break-glass manager account
-- keeps editable profile fields separate from security-sensitive user fields
-- leaves a manifest and information page so the installed setup is inspectable
-  after the wizard has run
-- includes preflight guidance before install/repair to avoid confusing
-  authentication data, profile fields, and application-only data
-
-## Why this exists
-
-Zope has powerful building blocks for authentication. PAS can be extended,
-ordered, combined, and made to talk to many different backends. Z SQL Methods
-can sit on top of many database adapters. Acquisition lets a folder reuse
-objects and connections from the folders above it. All of that is valuable.
-
-The practical problem is that these pieces have often felt like a large box of
-gears with no clear drawing of how they fit together. You can create users and
-roles in a standard user folder, and you can build almost anything with PAS,
-but the path from "I have an application folder" to "this folder is protected
-by SQL users, roles, login, fallback access, and maintainable user tools" is
-too cryptic. Too much is left to the developer to discover by reading scattered
-objects, old examples, and vague documentation.
-
-This product is meant to remove that black-box feeling. The wizard should not
-hide PAS; it should assemble PAS in a known-good way, leave readable objects in
-the folder, and document what it did. After running it, a manager/developer
-should be able to see:
-
-- which database connection is used
-- which SQL methods authenticate users and fetch roles
-- where the PAS plugin lives
-- how fallback access works
-- how to create and maintain users in managed mode
-- which objects are safe to customize for the local application
-- what remains read-only when using auth-only mode
-
-The goal is not magic. The goal is a working, inspectable starting point that
-keeps Zope's flexibility but removes the "good luck, figure out the gears"
-part.
-
-## Core data rule
-
-The product deliberately separates the data model into three layers:
-
-- identity and security: user id/login, password hash, enabled status, 2FA,
-  recovery address, and the stable link to any local person/employee record
-- authorization: role catalog and user-role assignments
-- profile display: first name, last name, display name, email, mobile, and
-  other fields the application explicitly allows users or managers to edit
-
-Existing Zope applications often blur these layers. A legacy employee table
-may look like a profile table because it contains names, phone numbers, and
-email addresses, while also containing internal notes, employment status,
-business-specific flags, or other manager-only data. The wizard must not turn
-that whole table into a self-service profile just because some columns look
-human-readable.
-
-For existing databases, first classify each field:
-
-- security fields belong in the SQL user/security methods
-- role fields belong in the role lookup and role assignment model
-- safe display fields may be copied or synced to the profile table
-- application-only fields stay in the application tables unless a local sync
-  rule deliberately exposes them
-
-## Product goal
-
-Products.SQLUserWizard is aimed at two practical Zope use cases:
-
-1. Existing Zope applications that already have an `acl_users`-style SQL user
-   database and want to move that folder to PAS without losing control of
-   users and roles.
-2. New Zope applications that want a SQL-backed PAS setup with a usable login
-   form, user administration, role assignment, profile fields, and recovery
-   access from the start.
-
-It is not intended to be a universal identity migration tool for arbitrary
-external applications. The supported built-in migration target is the classic
-Zope pattern: SQL tables originally used as an `acl_users` replacement, with
-recognizable username/password and username/role data. For unrelated legacy
-schemas, create a new product-owned SQL user model first, then write
-application-specific import scripts into that model.
-
-## Supported migration paths
-
-See also:
-
-- [Migration Paths](docs/migration-paths.md)
-- [SQL Dialects](docs/dialects.md)
-- [Current Status](docs/status.md)
-
-### Existing Zope-style user database
-
-Use auth-only mode first. It maps the local PAS setup to an existing
-`users`/`roles`-style database and performs authentication and role lookup
-read-only through Z SQL Methods. This proves that the database adapter,
-SQL dialect, username/password lookup, password format, and role names work
-before the wizard is allowed to write anything.
-
-Auth-only is a tool, not a promise that the table layout should be taken over.
-The built-in migration/take-control helper is meant for old SQL-backed
-`acl_users` replacements. If the tables are really application tables that only
-happen to contain user-looking fields, keep auth-only as a proof and write an
-explicit import or sync path instead.
-
-When the read-only proof is good and the old tables are confirmed to be
-classic Zope user/role tables, switch deliberately to a managed/take-control
-path. That path is where the product may create or repair product-owned tables,
-install the SQL user admin, and maintain users, roles, passwords, enabled
-status, and profile rows.
-
-### New SQL-backed application
-
-Use managed mode. The wizard creates the database tables, PAS objects, cookie
-login, user admin, editable profile layer, secure test page, status page, and
-fallback access.
-
-### Arbitrary external user stores
-
-Do not make the wizard map every possible legacy schema. Instead:
-
-1. Create the target Zope folder with a database connection and this product.
-2. Let managed mode create the target `users`/`roles` model.
-3. Add an import user or import-only script with the permissions needed for the
-   source system.
-4. Write custom import scripts that convert existing users and roles into the
-   product model.
-5. Migrate the rest of the application after authentication is known to work.
-
-The product intentionally treats Z SQL Methods as the database contract. The
-selected `connection_id` may point at OpenODBCDA, SQLAlchemyDA, or any other
-Zope Database Adapter that works with Z SQL Methods.
-
-Current scope:
-
-- install or repair a local `acl_users` Pluggable Auth Service
-- create a scriptable SQL auth plugin
-- create PostgreSQL Z SQL Methods for users and roles
-- optionally require per-user TOTP authenticator codes during form login
-- read existing Zope-style PostgreSQL and Oracle user tables in
-  auth-only mode
-- create a manager-only information page and machine-readable manifest
-- copy readable parent-folder users into the local fallback user store
-- keep repeated wizard runs idempotent
-- show a wizard preflight checklist before install/repair so developers must
-  think about security fields, profile fields, and application data before
-  pointing managed mode at existing tables
-
-Fallback access:
-
-During install/repair the wizard scans parent folders for local `acl_users`
-objects. Users whose stored password hash can be read are copied into the
-local fallback ZODB user manager with their roles. These fallback users are
-active in parallel with SQL users, but after the SQL plugin in the PAS order.
-
-The optional fallback manager field creates or updates one extra local
-break-glass user. It is useful for installations that want a dedicated
-recovery account, but it is not required when parent admin users can be
-synced. User folders that do not expose readable password hashes are reported
-as warnings.
+[Current task and progress](docs/task-managed-only-security.md) Â·
+[Changelog](CHANGELOG.md)
