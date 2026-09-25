@@ -1,286 +1,284 @@
-# Oppgave: Forenkle SQLUserWizard og rette sikkerhetshull
+# Task: Simplify SQLUserWizard and fix security vulnerabilities
 
-Dette er det levende oppgavedokumentet for denne tasken. Oppdater status,
-beslutninger, verifikasjon og gjenstående arbeid når endringer blir gjort.
+This is the living task document. Keep decisions, verification results, current
+status and remaining work up to date as implementation progresses.
 
-Opprettet: 2026-09-24
-Sist oppdatert: 2026-09-25
-Status: Fersk installasjon og avgrenset oppgradering er verifisert på labens PostgreSQL over HTTP og ekte omstart. Laben er gjenopprettet; ingen generell utrulling.
+Created: 2026-09-24
+Last updated: 2026-09-25
 
-### Nåstatus for kontrolllesing
+## Current status for review
 
-Forenkling, sikkerhetstiltak og oppgraderingsvei er implementert lokalt.
-126 tester passerer, også fra bygget kildepakke. Wheel og kildepakke passerer
-twine-kontroll. Install / Repair avviser nå overskriving av avvikende SQL før
-databasearbeid. Gjenstår: direkte Lavaart/Lavaart_pg-verifikasjon, sluttgjennomgang
-og opprydding i byggemetadata før endelig pakking. Ingen PyPI-publisering er gjort.
-Dokumentasjonen publiseres separat for brukerens kontrolllesing; den beskriver
-arbeidskandidaten, ikke en allerede publisert versjon. Sjekklistene og
-statuspunktene nedenfor er den opprinnelige planen og kronologisk arbeidshistorikk.
+The simplified installation model, security changes and runtime upgrade are
+implemented locally. All 126 tests pass, including tests from the built source
+distribution. The wheel and source distribution pass strict twine validation.
+Install / Repair refuses to overwrite differing SQL before database operations.
 
-## Mål og avgrensning
+Fresh installation and scoped upgrades have passed HTTP tests against the lab's
+PostgreSQL database, including a real server restart. The original lab installation
+has been restored. There has been no general deployment or PyPI publication.
 
-SQLUserWizard skal opprette og administrere sitt eget SQL-brukerskjema på
-alle støttede databaser. Wizarden skal ikke koble autentisering til en
-eksisterende SQL-brukerbase eller migrere/overtake dens tabeller. Brukeren
-står selv for eventuell senere import av egne data.
+Remaining work: direct Lavaart/Lavaart_pg verification, final review and build
+metadata cleanup before final packaging. Documentation is published separately
+for review and describes the unreleased candidate, not a published implementation.
 
-Arvede Zope-brukere, synkronisering til fallback-brukere og nødtilgang
-beholdes. Disse er ikke omfattet av fjerningen av SQL-migrering.
+All repository content, documentation, code comments and commit messages must be
+in English for an international audience.
 
-## Arbeid og akseptansekriterier
+The original planning checklists and chronological notes below are retained as
+history. Later decisions and this current-status section supersede earlier notes.
 
-### 1. Fjern eksisterende SQL-brukerbase og migrering
+## Objective and scope
 
-- [ ] Fjern `auth_only` og dialekter for eksisterende brukerskjemaer.
-- [ ] Fjern migrerings-/overtakelseslogikk og genererte migreringsmetoder.
-- [ ] Fjern tilhørende skjermvalg og hjelpetekster.
-- [ ] Oppdater tester og dokumentasjon slik at de beskriver den nye modellen.
+SQLUserWizard must create and manage its own SQL user schema on supported
+databases. It must not connect authentication to an existing SQL user database
+or migrate/adopt its tables. Users handle any later data import themselves.
 
-Akseptanse: En ny installasjon tilbyr ingen kobling til gamle SQL-brukertabeller,
-ingen migreringshandling og ingen generert migrerings-SQL.
+Inherited Zope users, synchronization to fallback users and emergency access
+remain supported. They are separate from the removed SQL migration features.
 
-### 2. Opprett produktets egne tabeller
+## Original work plan and acceptance criteria
 
-- [ ] Bruk samme installasjonsprinsipp for alle støttede databaser.
-- [ ] Tilby valgbare navn, eksempelvis `pas_users` og `pas_roles`.
-- [ ] Behold separate tabeller for brukere, rollekatalog, rolletildelinger og profiler.
-- [ ] Valider tabellnavn og stopp ved kollisjon med fremmede tabeller.
-- [ ] Behold gjentakbar installasjon/reparasjon av wizardens egne tabeller.
-- [ ] Håndter gamle innstillinger eksplisitt uten automatisk overtakelse av tabeller.
+### 1. Remove existing SQL user database integration and migration
 
-Akseptanse: Wizarden oppretter eget skjema med de valgte navnene. Gjentatt
-reparasjon bevarer egne data. Fremmede tabeller endres ikke.
+- [ ] Remove `auth_only` and existing-schema dialects.
+- [ ] Remove migration/adoption logic and generated migration methods.
+- [ ] Remove associated UI choices and help text.
+- [ ] Update tests and documentation to describe the new model.
 
-### 3. Behold arvede brukere og fallback
+Acceptance: a new installation offers no connection to old SQL user tables,
+no migration action and no generated migration SQL.
 
-- [ ] Behold støtte for arvede Zope-brukere og lokal fallback-/nødtilgang.
-- [ ] Verifiser at forenklingen ikke ødelegger denne tilgangen.
+### 2. Create product-owned tables
 
-### 4. Rett sikkerhetshullene
+- [ ] Use the same installation model across supported databases.
+- [ ] Allow configurable names such as `pas_users` and `pas_roles`.
+- [ ] Keep separate user, role catalog, role assignment and profile tables.
+- [ ] Validate table names and refuse collisions with unrelated tables.
+- [ ] Retain repeatable installation/repair of wizard-owned tables.
+- [ ] Handle old settings explicitly without automatically adopting tables.
 
-- [ ] Hindre autentisering som omgår aktivert 2FA.
-- [ ] Sikre at cookie-flyten kan skille fullført 2FA fra kun godkjent passord.
-- [ ] Sikre påkrevd 2FA-innmelding før ordinær tilgang gis.
-- [ ] Krev POST og CSRF-beskyttelse for handlinger som endrer data eller oppsett.
-- [ ] Valider redirect-adresser etter innlogging.
-- [ ] Legg til regresjonstester som demonstrerer at hullene er lukket.
+Acceptance: the wizard creates its schema using the selected names. Repeated
+repair preserves its data. Unrelated tables are not modified.
 
-Akseptanse: Manglende/ugyldig 2FA gir ikke ordinær tilgang; GET og forespørsler
-uten gyldig CSRF-beskyttelse kan ikke utføre endringer; innlogging kan ikke
-videresende til en vilkårlig ekstern adresse.
+### 3. Preserve inherited users and fallback access
 
-### 5. Struktur, dokumentasjon og verifikasjon
+- [ ] Preserve inherited Zope users and local fallback/emergency access.
+- [ ] Verify that simplification does not break this access.
 
-- [ ] Rydd struktur der det støtter forenklingen og sikkerhetsrettingene.
-- [ ] Bevar nødvendig kompatibilitet med lagrede Zope-objekter ved kodeflytting.
-- [ ] Oppdater installasjonsbeskrivelse, produktstatus og endringslogg.
-- [ ] Kjør relevant testsuite og registrer resultatene her.
-- [ ] Verifiser installasjon, reparasjon, innlogging, 2FA og fallback i tilgjengelige
-  Zope-/databasemiljøer. Skill lokale tester fra faktisk integrasjonsverifikasjon.
+### 4. Fix security vulnerabilities
 
-## Utgangspunkt
+- [ ] Prevent authentication that bypasses enabled 2FA.
+- [ ] Distinguish completed 2FA from password-only verification in cookie flows.
+- [ ] Complete mandatory 2FA enrollment before granting ordinary access.
+- [ ] Require POST and CSRF protection for data/configuration changes.
+- [ ] Validate post-login redirect destinations.
+- [ ] Add regression tests demonstrating that the vulnerabilities are closed.
+
+Acceptance: missing/invalid 2FA never grants ordinary access; GET requests and
+requests without valid CSRF protection cannot make changes; login cannot redirect
+to an arbitrary external destination.
+
+### 5. Structure, documentation and verification
+
+- [ ] Refactor where it supports simplification and security fixes.
+- [ ] Preserve compatibility with persisted Zope objects when moving code.
+- [ ] Update installation instructions, product status and changelog.
+- [ ] Run relevant tests and record results here.
+- [ ] Verify installation, repair, login, 2FA and fallback in available Zope/database
+  environments. Distinguish local tests from live integration verification.
+
+## Starting point
 
 - Repository: https://github.com/fixader/Products.SQLUserWizard
-- Lokal arbeidskopi: `C:\Users\rf\Documents\Products.SQLUserWizard`
-- Undersøkt gren/commit: `main`, `8944411`.
-- Pakkeversjon: `0.1.0a2`.
-- Før endringer: 70 tester passerer på Python 3.13.0.
-- Tidligere dokumenterte Zope-/databaselabtester er ikke gjentatt i denne tasken.
+- Local checkout: `C:\Users\rf\Documents\Products.SQLUserWizard`
+- Inspected branch/commit: `main`, `8944411`.
+- Package version: `0.1.0a2`.
+- Before changes: 70 tests passed on Python 3.13.0.
+- Previously documented Zope/database lab tests had not yet been repeated.
 
-Funn fra første gjennomgang:
+Initial findings:
 
-- Det genererte autentiseringsskriptet godtok i en lokal reproduksjon passord
-  uten OTP for en bruker med aktivert 2FA når skjemafelt manglet. Hele PAS-flyten
-  må verifiseres ved retting.
-- En lokal reproduksjon viste at GET kunne nå administratorens sletteoperasjon.
-- De undersøkte endringsmetodene manglet eksplisitt CSRF-kontroll.
-- Innloggingskontrolleren brukte `came_from` direkte som redirect-adresse.
-- Store moduler blander installasjon, HTML, SQL og autentisering.
+- A local reproduction showed the generated authentication script accepting a
+  password without OTP for a 2FA-enabled user when form fields were missing.
+  Verification of the complete PAS flow was required.
+- A local reproduction reached the administrator's deletion operation via GET.
+- Inspected mutation methods lacked explicit CSRF checks.
+- The login controller used `came_from` directly as a redirect destination.
+- Large modules mixed installation, HTML, SQL and authentication.
 
-## Beslutninger og åpne implementasjonsvalg
+## Decisions and initial implementation questions
 
-Avklart med brukeren:
+Agreed with the user:
 
-- Støtte for eksisterende SQL-brukerbaser og migrering skal fjernes.
-- Wizarden skal selv opprette brukertabeller og rolletabeller med valgbare navn.
-- Arvede brukere skal beholdes.
-- Sikkerhetshullene skal rettes.
-- Dette dokumentet skal holdes oppdatert mens arbeidet pågår.
+- Remove existing SQL user database integration and migration.
+- Have the wizard create its own user and role tables with configurable names.
+- Preserve inherited users.
+- Fix the security vulnerabilities.
+- Maintain this document throughout the work.
 
-Avklares i implementasjonen og dokumenteres her:
+Questions to resolve during implementation:
 
-- Endelige standardnavn for tabellene; dagens rollekatalog heter `pas_roles_catalog`.
-- Hvordan eierskap til eksisterende wizard-tabeller verifiseres ved reparasjon.
-- Hvordan tidligere installerte migreringsobjekter og gamle `auth_only`-oppsett
-  håndteres uten utilsiktede databaseendringer.
-- Teknisk løsning for 2FA-bevis, cookies og begrenset innmeldingstilgang.
-- Hvilke Zope-/databasemiljøer som er tilgjengelige for integrasjonstesting.
+- Final table defaults; the original role catalog was `pas_roles_catalog`.
+- Verification of ownership for existing wizard tables during repair.
+- Handling persisted migration objects and old `auth_only` setups without
+  unintended database changes.
+- Technical design for 2FA proof, cookies and restricted enrollment access.
+- Availability of Zope/database environments for integration tests.
 
-## Fremdriftslogg
+## Progress history
 
-| Dato | Endring | Verifikasjon / gjenstående |
+| Date | Change | Verification / remaining work |
 | --- | --- | --- |
-| 2026-09-24 | Første statusgjennomgang og lokal kloning. | 70 tester passerte. To sikkerhetsproblemer ble reprodusert lokalt. Ingen produksjonsendringer. |
-| 2026-09-24 | Oppgavebeskrivelse lagret etter brukerens ønske. | Kun dokumentasjon er endret. Implementering avventer videre arbeid. |
+| 2026-09-24 | Initial review and local clone. | 70 tests passed; two security issues reproduced locally. No production changes. |
+| 2026-09-24 | Saved the requested task document. | Documentation only; implementation still pending. |
 
-### Pågående arbeid
+### Initial implementation checkpoint
 
-- Migreringsgeneratorer og eksisterende-skjema-valg er fjernet.
-- Ny standard for rollekatalog er `pas_roles`; lagrede tabellnavn beholdes ved reparasjon.
-- Tabellnavn og manifest kontrolleres før installasjonen gjør endringer.
-- Serverlagrede sesjoner og separat innmeldingstilgang erstatter passordcookies.
-- POST/CSRF og lokale redirect-adresser kobles til skjermflytene.
-- Direkte publisering av genererte SQL-metoder stenges; betrodd Python-kode kaller dem internt.
-- Dette er en mellomtilstand. Tester og integrasjonsverifikasjon gjenstår.
+- Removed migration generators and existing-schema choices.
+- Changed the default role catalog to `pas_roles`; recorded table names remain authoritative.
+- Added table-name and manifest checks before installation changes.
+- Replaced password cookies with server-side sessions and restricted enrollment.
+- Connected POST/CSRF and local redirects to browser flows.
+- Blocked direct publishing of generated SQL methods; trusted Python calls them internally.
+- At this checkpoint, tests and integration verification were still pending.
 
-### Kontrollpunkt etter ønske om lavere forbruk
+### Checkpoint requested to limit usage
 
-- Kjerneendringene hadde 114 beståtte tester på Python 3.13 / Zope 6.1 /
-  PAS 4.1 / ZSQLMethods 5.1 før kompatibilitetsblokken startet.
-- Testene inkluderer faktisk Zope/PAS i prosess og en midlertidig SQLite-database.
-  Andre levende databaseinstanser og Zope 5 er ikke testet på nytt.
-- Innlogging, begrenset 2FA-innmelding, POST/CSRF, redirect, beskyttede SQL-metoder,
-  fallback, tabellkollisjon og reparasjon har lokale regresjonstester.
-- Brukeren presiserte at ferdig migrerte eldre installasjoner må kunne oppgraderes
-  uten å kjøre datamigrering igjen eller miste tabellnavn, brukere og roller.
-- `upgrade.py` og en oppstartshook er skrevet som pågående arbeid. Denne nye
-  oppgraderingsflyten er ENNÅ IKKE testet fra faktisk gammel versjon. Gjennomgå
-  oppstartsfeilhåndtering, tilpassede maler og innlesing av lagrede standardverdier
-  før den kan brukes. Dagens kode kan stoppe oppstart ved en oppgraderingsfeil.
-- `docs/upgrade.md` beskriver fortsatt den tidligere planen om manuell reparasjon;
-  den må oppdateres når kompatibilitetsflyten er ferdig bestemt og verifisert.
-- Ingen endringer er pushet, publisert eller satt i drift. Arbeidet er lokalt og
-  ikke committet. Kontrollpunktet er ikke en ferdig utgivelse.
+- Core changes passed 114 tests on Python 3.13 / Zope 6.1 / PAS 4.1 / ZSQLMethods 5.1.
+- Tests used real Zope/PAS in process and disposable SQLite. Other live database
+  engines and Zope 5 had not been retested.
+- Local regressions covered login, restricted 2FA enrollment, POST/CSRF, redirects,
+  SQL method permissions, fallback, table collisions and repair.
+- The user clarified that completed migrations must upgrade without repeating
+  data migration or losing table names, users or roles.
+- `upgrade.py` and a startup hook were work in progress, not yet tested against
+  actual old objects. Startup error isolation, customized templates and saved
+  defaults required review; startup failure handling was incomplete.
+- At that time, `docs/upgrade.md` still described the earlier manual-repair plan.
+- Nothing had been committed, pushed, published or deployed.
 
-Neste avgrensede blokk:
+The next block was to isolate startup failures, test actual 0.1.0a2 objects with
+completed migrations and custom table names without touching SQL data, and update
+the upgrade documentation. The agreed working style was smaller blocks with
+frequent progress reports and clear checkpoints.
 
-1. Gjennomgå oppstartshooken og sikre at en enkelt gammel/tilpasset installasjon
-   ikke velter resten av Zope ved oppgradering.
-2. Lag en oppgraderingstest med objekter generert av faktisk 0.1.0a2, inkludert en
-   ferdig migrert installasjon med egne tabellnavn. Kontroller at SQL-data ikke røres.
-3. Oppdater oppgraderingsdokumentasjon og rapporter resultat før mer arbeid.
+### Runtime upgrade verified locally
 
-Arbeidsform videre: mindre blokker, hyppigere status og et tydelig stopp før
-neste større blokk for å begrense forbruket.
+- Froze source from commit `8944411` (0.1.0a2) as test input. Its installer runs in
+  a separate process; exported ZODB objects are loaded and upgraded under new code.
+- Verified a completed migration using `pas_users_migrated`, `pas_roles_catalog`,
+  `pas_user_roles_migrated` and `pas_user_profiles`.
+- Upgrade executes no SQL and preserves data. Existing passwords, 2FA, roles and
+  fallback work afterward. Missing instance defaults are restored from the manifest.
+- Normal product initialization registers the startup hook. Completed runtime
+  revisions are skipped on subsequent startup.
+- Per-folder failure rolls back partial changes, disables that folder's SQL
+  authentication and reports the failure. Traversal continues; ZODB fallback is
+  preserved. A corrected installation can retry.
+- Ordinary customized DTML login forms receive CSRF fields without replacing
+  layout; unrecognized forms require review and trigger upgrade failure.
+- Result: 118 tests passed; `git diff --check` was clean.
+- Environment: Zope 6.1, Python 3.13 and disposable SQLite. Full server startup,
+  Zope 5 and other live database engines were not yet verified.
+- No commit, push or running-installation change had occurred at this checkpoint.
 
-### Oppgraderingsblokk fullført lokalt
+### Read-only lab discovery, 2026-09-25
 
-- Faktisk kildekode fra commit `8944411` (0.1.0a2) er frosset som testgrunnlag.
-  Den gamle installatøren kjøres i egen prosess; dens eksporterte ZODB-objekter
-  lastes under ny kode og oppgraderes.
-- Verifisert ferdig migrert tabelloppsett: `pas_users_migrated`,
-  `pas_roles_catalog`, `pas_user_roles_migrated`, `pas_user_profiles`.
-- Oppgraderingen kjører ingen SQL-spørringer og endrer ikke SQL-data. Eksisterende
-  passord, 2FA, rolledata og fallback-konto virker etterpå. Gamle standardverdier
-  på wizard-objekter hentes fra manifestet fremfor nye klassestandarder.
-- Oppstartshook er registrert ved normal produktinitialisering. Fullført
-  oppgraderingsrevisjon hoppes over ved senere oppstart.
-- Feil i én mappe ruller tilbake den mappens delvise endringer, sperrer dens
-  SQL-autentisering og viser feilstatus. Andre mapper gjennomgås videre;
-  ZODB fallback beholdes. En rettet installasjon kan oppgraderes på nytt.
-- Vanlige tilpassede DTML-innloggingsskjema får CSRF-felt uten at layout erstattes.
-  Ukjente skjemavarianter krever gjennomgang og behandles som oppgraderingsfeil.
-- Samlet testresultat: **118 bestått**, ren `git diff --check`.
-- Oppgraderingsdokumentasjonen er oppdatert. Testmiljøet er fortsatt Zope 6.1,
-  Python 3.13 og midlertidig SQLite; full serveroppstart og Zope 5 / andre levende
-  databaseinstanser er ikke verifisert her.
-- Ingen push, commit eller endringer i kjørende installasjoner. Vi stopper ved
-  dette kontrollpunktet for å holde forbruket avgrenset.
-
-Denne oppføringen erstatter den tidligere statusen om at kompatibilitetsblokken
-ikke var testet. Historiske fremdriftsnotater over er beholdt som arbeidslogg.
-
-### Labkartlegging 2026-09-25 – kun lesing
-
-- Bekreftet `zopedatest` på `192.168.0.12`, Zope på port 8081.
+- Confirmed `zopedatest` at `192.168.0.12`, Zope on port 8081.
 - Python 3.14.4, Zope 6.1, PAS 4.1, ZSQLMethods 5.1.
-- SQLUserWizard rapporterer 0.1.0 og er editable-installert fra
-  `/home/codex/openodbcda-lab/Products.SQLUserWizard`. Koden inneholder
-  cookie-dobbeltkodingsrettingen og brukeropplisting. Versjonsetiketten alene
-  er dermed ikke tilstrekkelig til å identifisere kodens tilstand.
-- `/PASProductLab`: managed, lokal PostgreSQL `openodbc_test`, vanlige `pas_*`-tabeller.
-- `/PAS2FALab`: managed, samme lokale PostgreSQL, egne `pas2fa_*`-tabeller.
-- `/PASSmoke_sqlite` og `/PASSmoke_mysql`: egne tabeller på lokale databaser.
-- `/PASSmoke_pg`: PostgreSQL på 192.168.0.11. `/PASSmoke_mssql` peker på
-  lokal port 11433, som ikke var i listen over lyttende porter. Tilkobling er ikke testet.
-- `/PASProductLab_existing_pg` og `/PASProductLab_existing_oracle` er fortsatt
-  auth_only, og skal ikke tolkes som ferdig migrerte installasjoner.
-- `/PASProductLab_pg_remote` har et gammelt manifest UTEN mode-felt; dagens
-  oppgraderingskode vil hoppe over dette. Krever eksplisitt kompatibilitetstest.
-- `/Lavaart` har migrerte tabellnavn og Oracle-tilkobling.
-- VIKTIG: `/Lavaart_pg` har manifest OG wizard satt til oracle11g, mens dens
-  aktive `VolumOrdre`-adapter peker til PostgreSQL-databasen `lavaart` på
-  192.168.0.11. Manifestet er ikke en pålitelig fasit for å regenerere SQL her.
-  Dagens automatiske oppgradering må ikke kjøres ukritisk mot denne installasjonen.
-- ZODB ble åpnet med FileStorage(read_only=True). Ingen tjenester ble startet
-  eller stoppet, ingen pakker ble installert, og ingen SQL-spørringer ble kjørt.
-- Neste anbefalte testmål er en isolert kopi av PASProductLab/PAS2FALab og en
-  fersk testmappe. Før noen pakkeoppdatering på den delte instansen må
-  oppgraderingen håndtere manglende/gammelt manifest og avvik mellom manifest,
-  adapter og faktisk SQL, eller avgrenses til eksplisitt valgte testmapper.
+- SQLUserWizard reported 0.1.0 and was editable-installed from
+  `/home/codex/openodbcda-lab/Products.SQLUserWizard`. Source included cookie
+  double-encoding and user enumeration fixes; version alone did not identify its state.
+- `/PASProductLab`: managed, local PostgreSQL `openodbc_test`, ordinary `pas_*` tables.
+- `/PAS2FALab`: managed, the same local PostgreSQL, separate `pas2fa_*` tables.
+- `/PASSmoke_sqlite` and `/PASSmoke_mysql`: separate tables in local databases.
+- `/PASSmoke_pg`: PostgreSQL at 192.168.0.11. `/PASSmoke_mssql` pointed to local
+  port 11433, absent from the listening-port list; connectivity was not tested.
+- `/PASProductLab_existing_pg` and `/PASProductLab_existing_oracle` remained
+  `auth_only`, not completed migrations.
+- `/PASProductLab_pg_remote` lacked manifest `mode`; the implementation at that
+  checkpoint skipped it. Explicit compatibility handling was required.
+- `/Lavaart` used migrated table names and an Oracle connection.
+- `/Lavaart_pg` recorded `oracle11g` in both manifest and wizard, but its active
+  `VolumOrdre` adapter pointed to PostgreSQL database `lavaart` at 192.168.0.11.
+  The manifest could not safely drive SQL regeneration.
+- ZODB was opened with `FileStorage(read_only=True)`. No service changes, package
+  installs or SQL queries were performed during discovery.
+- The initial recommendation was an isolated copy of PASProductLab/PAS2FALab and
+  a fresh folder. Before shared-instance updates, compatibility handling or an
+  explicit folder scope was needed. Later authorization allowed direct lab testing.
 
-Labfunnene over avdekker nye kompatibilitetstilfeller som ikke dekkes av den
-allerede beståtte 0.1.0a2-testen. Ingen utrulling er godkjent eller utført i denne
-kartleggingsblokken.
+These findings added cases beyond the successful 0.1.0a2 test. No deployment was
+approved or performed during the discovery block.
 
-### Direkte labtest fullført 2026-09-25
+### Direct lab test completed, 2026-09-25
 
-- Brukeren godkjente direkte labtesting med backup og avgrensning til utvalgte mapper.
+- The user authorized direct lab testing with backup and selected folders.
 - Backup: `/home/codex/openodbcda-lab/backups/sqluw-upgrade-20260925T052203Z`.
-- Tjenesten er `zopedatest-zope61.service` (systemd, Restart=always).
-- Ny miljøvariabel `SQLUSERWIZARD_UPGRADE_PATHS` avgrenser automatisk oppgradering
-  til eksakte fysiske mappestier. Labtesten valgte PASProductLab og PAS2FALab.
-- Ekte oppstart oppgraderte begge mappene. Kontrollsummer og radantall for åtte
-  eksisterende SQL-tabeller var uendret både etter oppgradering og etter testopprydding.
-- HTTP-tester besto for innlogging/roller, avvist manglende OTP, korrekt 2FA,
-  innmelding uten ordinær tilgang, aktivering, utlogging, CSRF og GET-sperrer.
-- Fersk PostgreSQL-installasjon gjennom HTTP/ZMI besto, inkludert opprettelse av
-  wizard, tabeller, første bruker, profilskriving og reparasjon.
-- Funn/retting: PAS2FALab bruker fortsatt login_name-kolonnen. Runtime-oppgradering
-  bevarer nå eksisterende SQL-kode i stedet for å generere den fra nye maler.
-- Funn/retting: CSRF-token for ZMI-produktfabrikken må knyttes til den persistente
-  foreldremappen. Dette er rettet og regresjonstestet.
-- Sluttresultat lokalt: 120 tester passerer; git diff --check er ren.
-- Midlertidige SQL-brukere og fire ferske testtabeller er fjernet. Gammel kode og
-  ZODB er gjenopprettet fra backup, inkludert fjerning av midlertidig testadministrator
-  og mapper. Midlertidig systemd-miljøinnstilling er fjernet. Tjenesten er aktiv og
-  svarte HTTP 200 etter gjenoppretting.
-- Den testede kandidatkoden er bevart i backupens `candidate-tested`-mappe.
-  Ingen Git-push eller commit er gjort.
+- Service: `zopedatest-zope61.service` (systemd, Restart=always).
+- Added `SQLUSERWIZARD_UPGRADE_PATHS` to select exact physical folder paths;
+  the test selected PASProductLab and PAS2FALab.
+- Real startup upgraded both folders. Row counts and checksums for eight original
+  SQL tables were unchanged after upgrade and after test cleanup.
+- HTTP tests passed for login/roles, missing-OTP rejection, valid 2FA, restricted
+  enrollment, activation, logout, CSRF and GET rejection.
+- Fresh PostgreSQL installation through HTTP/ZMI passed: wizard creation,
+  tables, first user, profile write and repair.
+- Fixed a compatibility issue: PAS2FALab still uses `login_name`. Runtime upgrade
+  now preserves actual SQL source instead of regenerating it from current templates.
+- Fixed constructor CSRF: tokens bind to the persistent parent rather than the
+  transient ZMI product factory. Added a regression test.
+- Result: 120 tests passed; `git diff --check` was clean.
+- Removed temporary SQL users and four fresh test tables. Restored original code
+  and ZODB, removing temporary administrator/folders and the systemd scope setting.
+  The service was active and returned HTTP 200 after restoration.
+- Preserved tested candidate source in the backup's `candidate-tested` directory.
+  No Git commit or push had occurred at this checkpoint.
 
-Gjenstående særtilfeller før generell utrulling: manifest uten mode-felt,
-retirerte auth_only-installasjoner og direkte test av Lavaart/Lavaart_pg. Zope 5
-og øvrige levende databasemotorer er heller ikke testet i denne blokken.
+At that time, open cases were missing-mode manifests, retired auth-only folders
+and direct Lavaart/Lavaart_pg tests. Zope 5 and other live database engines had not
+been retested. The later support-boundary decision below supersedes the need to
+add automatic conversion for experimental setups.
 
-### Kompatibilitetsblokk: eldre manifest og lokal SQL
+### Compatibility block: older manifests and local SQL
 
-- Manifest uten mode blir nå rapportert som oppgraderingsavvik; gammel SQL-auth
-  deaktiveres gjennom eksisterende feilisolering, mens ZODB-fallback beholdes.
-  Automatisk konvertering av denne tidlige varianten er fortsatt uavklart.
-- Managed-installasjoner må ha SQL-metodene som de nye kontrollerne trenger,
-  inkludert update_2fa, før runtime-oppgraderingen starter.
-- Regresjonstest bekrefter innlogging med feil dialect i manifest og lokalt
-  tilpasset SQL. SQL-kode, argumenter og tilkoblings-ID bevares.
-- Neste konkrete kodepunkt: sikre Install / Repair mot overskriving av lokal
-  SQL ved utdatert manifest. Runtime-oppgraderingen bevarer dette allerede.
-- Ingen endringer på labmaskinen i denne blokken.
-- Verifisert: 123 tester passerer; git diff --check uten feil.
+- Missing manifest mode now produces an upgrade diagnostic; existing failure
+  isolation disables old SQL authentication while retaining ZODB fallback.
+- Managed installations must contain the SQL methods required by the new
+  controllers, including `update_2fa`, before runtime upgrade starts.
+- A regression test confirms login with a stale manifest dialect and customized
+  SQL; source, arguments and connection ID are preserved.
+- At this checkpoint, protecting Install / Repair from overwriting customized SQL
+  remained the next task. Runtime upgrade already preserved it.
+- No lab changes. Result: 123 tests passed; `git diff --check` was clean.
 
-### Avklart støttegrense etter brukerens tilbakemelding
+### Agreed support boundary
 
-- Automatisk konvertering av de tidligste eksperimentelle laboppsettene tas ut
-  av gjenstående leveranse. De skal avvises og kreve særskilte manuelle tiltak.
-- Eldste verifiserte kildeversjon er 0.1.0a2, commit 8944411. Denne skriver selv
-  version=0.1.0 i manifestet; et rent numerisk versjonsskille er derfor upålitelig.
-- Teknisk grense er eksplisitt managed-manifest, gyldig tabellmapping og de
-  nødvendige SQL-metodene, inkludert update_2fa. Eksisterende kontroller avviser
-  manglende mode/metoder og beholder fallback ved oppgraderingsfeil.
-- docs/upgrade.md beskriver støttegrensen og manuell håndtering. Tidligere
-  punkter om automatisk støtte for disse gamle testoppsettene er erstattet av
-  denne avklaringen. Ferdig migrerte managed-installasjoner forblir innenfor.
-- Ingen kodeendring eller ny labendring i denne dokumentasjonsblokken.
-- Brukeren presiserte at tiltak for gamle testoppsett kan være avinstallering
-  og nyinstallering. Dette er dokumentert som normal løsning for slike oppsett;
-  egen konverteringskode er ikke påkrevd. Reinstallering av Python-pakken alene
-  fjerner ikke gamle ZODB-objekter/tabeller. Ingen avinstallering er utført.
+- Automatic conversion of the earliest experimental lab setups is outside scope.
+  Refuse their upgrade and require separate manual handling.
+- The oldest verified source is 0.1.0a2, commit `8944411`. It writes `version=0.1.0`
+  in the manifest, so a numeric version cutoff alone is unreliable.
+- The technical boundary requires an explicit managed manifest, valid table mapping
+  and required SQL methods, including `update_2fa`. Missing mode/methods are rejected;
+  fallback is preserved through upgrade failure handling.
+- `docs/upgrade.md` documents the boundary and manual options. Completed managed
+  migrations remain in scope. Earlier plans for automatic support of experimental
+  setups are superseded.
+- Removal and fresh installation are acceptable remedies for disposable test
+  setups; dedicated conversion code is not required. Reinstalling the Python
+  package alone does not remove persisted ZODB objects or SQL tables.
+- No uninstall or new lab changes were performed in this documentation block.
+
+### Repair protection and distribution checks
+
+- Install / Repair now refuses differing generated SQL source, arguments or
+  connection settings before any database calls. Three regression cases cover it.
+- Result: 126 tests passed, including from the unpacked source distribution.
+- Built wheel and source distribution; both passed `twine check --strict`.
+  Wheel product modules match current source; the source package includes the
+  legacy fixture, tests and documentation.
+- Remaining build warnings concern legacy license metadata; final packaging is pending.
+- Published review documentation on `docs/0.2.0a1-review`, commit `f63331a`.
+  Product implementation remains uncommitted; nothing has been uploaded to PyPI.
+- Corrected this task document to English after the user clarified the repository
+  language requirement. Future repository content and commits must use English.
