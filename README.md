@@ -5,6 +5,59 @@ administration, roles, profiles, authenticator 2FA and inherited fallback access
 Version **0.2.0a1** is an unreleased alpha candidate. This documentation describes
 the candidate under development; see [release status](docs/status.md).
 
+## Why this exists
+
+Zope provides powerful authentication building blocks. Pluggable Auth Service
+(PAS) combines authentication and authorization plugins. Z SQL Methods work
+through different database adapters, and acquisition lets application folders
+reuse connections from their parents. The difficult part is assembling these
+pieces into a complete, maintainable application login system.
+
+SQLUserWizard grew out of practical work with Zope 5 and Zope 6 applications.
+It bridges the gap between an application folder with a database connection and
+a working setup with SQL users, roles, login forms, user administration, profiles,
+authenticator enrollment and fallback access. Developers should not have to
+reconstruct that setup from scattered examples and undocumented object settings.
+
+The wizard leaves the result inspectable. Managers can see the selected database
+connection, the SQL methods for users and roles, the PAS plugins, the fallback
+store, editable templates and a manifest describing the installation. These
+remain ordinary Zope objects that developers can inspect and maintain.
+
+## Who it is for
+
+- New Zope applications that need SQL-backed users and roles with usable
+  administration and recovery access from the start.
+- Existing applications adopting a product-owned SQL identity model, with any
+  import of old users handled separately by the application's developer.
+- Existing managed SQLUserWizard installations, including completed migrations,
+  upgrading their authentication runtime while retaining users and table names.
+
+Version 0.2 simplifies setup to one installation model. The previous auth-only
+and migration tools have been removed; they are not required to use the wizard
+with an existing application. See [upgrade boundaries](docs/upgrade.md) for
+older installations and [release history](CHANGELOG.md) for the earlier design.
+
+## Database and Zope compatibility
+
+Previously verified managed installations establish the compatibility baseline:
+PostgreSQL, SQLite, MariaDB/MySQL, Microsoft SQL Server and Oracle 11g-style SQL
+on Zope 6.1, plus PostgreSQL on Zope 5.8.3. **These combinations remain expected
+to work with 0.2.0a1.** They have not been dropped merely because every live test
+has not yet been repeated for this candidate.
+
+The new session and security flows have been verified on Zope 6.1 with SQLite
+locally and PostgreSQL over HTTP in the lab. Confirmation on the remaining
+historically tested combinations is pending. Oracle 12c+ SQL has templates but
+still lacks a recorded live test. See the [compatibility matrix](docs/status.md)
+for the distinction between previous verification, expected compatibility and
+candidate results.
+
+Z SQL Methods are the database contract. The connection may use OpenODBCDA,
+SQLAlchemyDA or another compatible Zope database adapter; the wizard does not
+require one particular adapter. Adapter-specific combinations still need their
+own verification.
+
 ## One installation model
 
 Choose a database connection, dialect and unused table names. The wizard creates
@@ -35,6 +88,11 @@ available if SQL is unavailable. Use distinct SQL and fallback ids/logins.
 
 ## Installation
 
+Use the Zope instance's Python environment. The commands below install the
+checked-out source version. This documentation branch is published ahead of the
+candidate implementation; cloning `main` does not yet install the described
+0.2.0a1 changes. No 0.2.0a1 package has been uploaded to PyPI.
+
 ```bash
 git clone https://github.com/fixader/Products.SQLUserWizard.git
 cd Products.SQLUserWizard
@@ -52,6 +110,11 @@ Products.ZSQLMethods and segno. `setup.py` remains for older buildout workflows.
 SQL templates cover PostgreSQL, SQLite, MySQL/MariaDB, SQL Server and Oracle
 11g/12c+. See [dialects](docs/dialects.md) and [verification status](docs/status.md)
 for the distinction between template support and live verification.
+
+For older buildout installations, use a `develop` checkout or install the
+checkout with `pip install -e /path/to/Products.SQLUserWizard` in the instance
+environment. Runtime dependencies are `Zope>=5.0`,
+`Products.PluggableAuthService>=2.0`, `Products.ZSQLMethods` and `segno` for QR codes.
 
 For an existing installation, read [upgrade and repair](docs/upgrade.md) first.
 Normal Zope startup upgrades recorded managed installations without running SQL or changing their table mapping. Existing users must log in again.
@@ -76,6 +139,32 @@ Normal Zope startup upgrades recorded managed installations without running SQL 
 The installation remains inspectable through its generated PAS objects, status
 page and manifest. Editable templates may be customized; repair preserves
 customized templates and reports them for review.
+
+## Keep security, profiles and application data separate
+
+The generated model separates identity/security, authorization and editable
+profile data. Passwords, enabled status and 2FA belong to the security layer;
+roles and assignments determine authorization; names and contact details belong
+to the explicitly editable profile layer.
+
+An employee or person table may also contain internal notes, employment status,
+business flags or other restricted information. Those fields remain application
+data. Having a name and email column does not make the whole table suitable for
+self-service access. If an application needs synchronization, its developer
+must explicitly select which fields may enter the profile model.
+
+## Fallback and recovery access
+
+During installation/repair, the wizard scans parent folders for local `acl_users`
+objects. Where password hashes are readable, users and their roles are copied
+into the local ZODB fallback store. These are local copies, not a live connection
+to an external SQL user database. User folders without readable password hashes
+are reported as warnings.
+
+An optional fallback manager provides a dedicated recovery account. It is not
+required when suitable parent administrators can be copied. Fallback access
+remains available when SQL is unavailable; use distinct SQL and fallback
+identities to avoid combining permissions across PAS plugins.
 
 ## Development
 

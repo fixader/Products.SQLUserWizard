@@ -17,6 +17,14 @@ in the lab scope:
 - Oracle 11g
 - Oracle 12c and newer
 
+PostgreSQL, SQLite, MariaDB/MySQL, SQL Server and Oracle 11g-style managed setups
+were live-tested with the previous release and remain expected to work with
+0.2.0a1. Repeating the full live matrix is confirmation work, not a prerequisite
+for retaining these as supported targets. Candidate verification currently covers
+SQLite in process and PostgreSQL in the live lab. Oracle 12c+ remains a template
+target without recorded live verification. See the [status matrix](status.md)
+for Zope versions, adapters and remaining confirmation work.
+
 The supported SQL surface is intentionally small:
 
 - create the four product-owned tables

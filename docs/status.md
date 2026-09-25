@@ -17,6 +17,26 @@
 
 ## Historical verification
 
+The previously tested combinations remain the expected compatibility baseline
+for 0.2.0a1. Pending revalidation does not mean support has been withdrawn.
+The table distinguishes evidence from the previous release from confirmation of
+the new runtime; it does not claim the new security flows were tested everywhere.
+
+| Environment | Previous verification | 0.2.0a1 verification | Compatibility expectation |
+| --- | --- | --- | --- |
+| Zope 6.1 / PostgreSQL | Managed install, login, roles; TOTP enrollment, QR codes and code rejection | Live HTTP fresh install, scoped upgrade, repair, sessions and 2FA passed | Expected; candidate verified in the recorded lab setups |
+| Zope 6.1 / SQLite | Managed install, login and roles via ODBC | In-process installation, repair, upgrade and security tests passed with disposable SQLite adapter | Expected; live ODBC repeat pending |
+| Zope 6.1 / MariaDB/MySQL | Managed install, login and roles via ODBC | SQL template tests; live repeat pending | Expected from previous verification |
+| Zope 6.1 / Microsoft SQL Server | Managed install, login and roles via ODBC | SQL template tests; live repeat pending | Expected from previous verification |
+| Zope 6.1 / Oracle 11g-style SQL | Managed install, login and roles | SQL template tests; live repeat pending | Expected from previous verification |
+| Zope 5.8.3 / Python 3.8 / PostgreSQL | Buildout develop install, login, roles and TOTP enrollment/activation via OpenODBCDA | Repeat pending | Expected from previous verification |
+| Oracle 12c+ | Templates only; no recorded live test | SQL template tests; live test pending | Intended dialect support, not historically live-verified |
+| SQL Server / FreeTDS adapter variant | Not live-verified | Pending | Adapter-specific verification still needed |
+
+Historical TOTP tests also covered return-to-application redirects and QR-code
+setup. Historical auth-only PostgreSQL/Oracle tests belong to removed features
+and do not expand the current managed-only support boundary.
+
 The 0.1.0a2 lab results in the changelog belong to the old cookie/authentication
 flow. They are not evidence that the new session and upgrade flow has passed on
 all those environments. Template tests cover all supported SQL dialects, while

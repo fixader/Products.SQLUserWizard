@@ -24,6 +24,12 @@ for review and describes the unreleased candidate, not a published implementatio
 All repository content, documentation, code comments and commit messages must be
 in English for an international audience.
 
+The product documentation retains the rationale and practical context from
+`main`: inspectable PAS setup, adapter independence, recovery access and separation
+of security, profiles and application data. Historically verified managed
+database/Zope combinations remain expected to work; candidate revalidation is
+tracked separately and must not be confused with withdrawal of support.
+
 The original planning checklists and chronological notes below are retained as
 history. Later decisions and this current-status section supersede earlier notes.
 
