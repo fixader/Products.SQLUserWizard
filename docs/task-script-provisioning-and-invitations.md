@@ -16,17 +16,28 @@ in [Optional invitation workflow product](task-optional-invitation-product.md).
 ### Chapter 4 release gate
 
 The user confirmed the Plone Order System case-study server at `192.168.0.74`
-as the integration-test target. Before republishing, inspection of the published
-OpenODBCDA 1.0.2 wheel found that `OpenODBCDatabaseConnection._connect()` uses
-`pyodbc.connect(..., autocommit=True)` and its query pool does not join Zope's
-transaction manager. This is incompatible with atomic invitation completion.
-The current completion guard correctly refuses this adapter.
+as the integration-test target. OpenODBCDA 1.0.2 uses autocommit and does not join
+Zope's transaction manager. The agreed solution is to keep the adapter unchanged
+and make PostgreSQL invitation creation and completion each a single atomic SQL
+statement. Other dialects retain the transaction-participation completion guard.
 
-No new release or server changes have been performed for this test. A decision
-is pending on adding transaction support to OpenODBCDA versus using another
-transaction-participating adapter. Do not remove the guard or treat per-statement
-autocommit as transactional completion. Creation of an invitation and its roles
-also needs the same transaction guarantee before deployment.
+Implemented and verified on 2026-09-26: six live tests through Z SQL Methods and
+the published OpenODBCDA 1.0.2 wheel passed on lab `192.168.0.12`, using a disposable
+PostgreSQL database. They cover four simultaneous completions, replay, duplicate
+identities, expiry/revocation/roles, failures at every completion write stage,
+creation rollback, and usable connections after failure. The temporary database
+and role were removed. No chapter 4 application state or published release changed.
+
+ODBC interpreted PostgreSQL's `?` JSON operator as a parameter; using
+`jsonb_exists` resolved the verified incompatibility. The opt-in test harness is
+`tests/live_invitation_postgresql.py`. See [transaction boundaries](invitation-api.md#transaction-boundary-and-remaining-verification)
+for the explicit limitation: a later Zope/ZODB or response failure cannot roll
+back a successful autocommit SQL statement. This is not a distributed transaction.
+
+Remaining release gates include chapter 4 application testing, examples,
+upgrade/repair review, distribution checks, version selection and republication.
+Invitation workflows on other database/adapter combinations are not yet verified;
+this does not narrow the existing managed authentication compatibility scope.
 
 The case-study chapter's planned automatic-login wording differs from the agreed
 API: completion creates an identity and redirects to normal login/TOTP; it does
@@ -34,7 +45,8 @@ not issue an authenticated session solely from an invitation token. Update that
 wording when recording the actual chapter verification.
 
 Work is in progress on `feature/invitations`; the published `v0.2.0a1`
-artifacts remain unchanged. This feature is not yet enabled or usable.
+artifacts remain unchanged. The feature is implemented on the development branch
+but has not been deployed to the chapter 4 application.
 
 First checkpoint implements the private SQL contract in `invitation_sql.py`:
 
@@ -59,16 +71,13 @@ preserves the optional invitation ownership record.
 The controller includes create, inspect, list, rotate, revoke, delivery-status
 and completion operations. It restricts roles, validates requests and uses a
 strict user insert before the shared profile/role helper. Completion rejects
-adapters that do not join the Zope transaction and dooms failed transactions.
+non-PostgreSQL adapters that do not join the Zope transaction and dooms failed
+transactions. PostgreSQL uses the single-statement path described above.
 
-Remaining: browser setup UI, permission/proxy-role integration tests, broader
-failure/concurrency coverage through real adapters, application examples,
-upgrade/repair edge cases and isolated live PostgreSQL verification. The feature
-is not ready for release; SQL-level tests alone do not establish end-to-end atomicity.
-
-Current local result: 150 tests pass, including a completion failure rolled back
-through the Zope transaction manager with a transactional SQLite test adapter.
-This does not yet verify the live PostgreSQL adapter or custom proxy-role scripts.
+Current local result: 157 tests pass. Browser setup and proxy-role integration
+are implemented. The transactional SQLite tests verify rollback through Zope;
+the separate live PostgreSQL harness verifies the autocommit statement boundary.
+Application examples, upgrade/repair edge cases and chapter 4 verification remain.
 
 ### Script permissions and setup checkpoint
 
@@ -79,8 +88,8 @@ This does not yet verify the live PostgreSQL adapter or custom proxy-role script
   and lack of controller acquisition from a sibling application.
 - Controller storage resolution uses its physical application even when acquired
   from a child script. Inspection/completion proxy roles cannot be granted by invites.
-- Added [development API documentation](invitation-api.md). Zope 5, live PostgreSQL,
-  more transaction edge cases and complete application examples remain pending.
+- Added [development API documentation](invitation-api.md). Zope 5 wrapper
+  confirmation and complete application examples remain pending.
 
 No server changes or publication are part of this checkpoint. Package version
 selection remains pending until the feature's compatibility scope is finalized.

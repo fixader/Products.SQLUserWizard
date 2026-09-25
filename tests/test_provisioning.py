@@ -54,6 +54,14 @@ def test_completion_refuses_nontransactional_adapter(provisioning):
         provisioning.complete_invitation(invitation["token"], "u", "u", "long-password", {}, post(provisioning, {}))
 
 
+def test_completion_validates_mobile_before_database_writes(provisioning):
+    invitation = create(provisioning)
+    with pytest.raises(ValueError, match="mobile"):
+        provisioning.complete_invitation(invitation["token"], "u", "u", "long-password",
+                                         {"mobile": "1" * 41}, post(provisioning, {}))
+    assert provisioning.inspect_invitation(invitation["token"], request())["valid"]
+
+
 class TransactionalSQLite(TM):
     def __init__(self, db):
         self.db = db

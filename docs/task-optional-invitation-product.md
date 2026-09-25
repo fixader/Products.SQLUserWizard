@@ -73,6 +73,12 @@ Because raw tokens cannot be recovered, a later retry may require explicit
 rotation and a newly generated link. Do not promise transparent resend of an
 existing secret.
 
+PostgreSQL core operations may commit immediately through an autocommit adapter.
+The add-on must not assume a later Zope request failure undoes an invitation or
+account. After an ambiguous response, offer normal login/account recovery for an
+accepted invitation. Keep mail delivery separate from database completion; see
+the core [transaction boundary](invitation-api.md#transaction-boundary-and-remaining-verification).
+
 ## Permissions and security
 
 The add-on must install only narrowly authorized scripts, using the final core

@@ -146,9 +146,14 @@ class SQLUserProvisioning(SimpleItem):
                       created_at=now, expires_at=now + expires_in)
         plugin = self._plugin()
         try:
-            plugin.zsql_invitation_create(**values)
-            for role in roles:
-                plugin.zsql_invitation_add_role(invitation_id=invitation_id, role_id=role)
+            if "zsql_invitation_create_atomic" in plugin.objectIds():
+                result = first_row(plugin.zsql_invitation_create_atomic(roles_json=json.dumps(roles), **values))
+                if result is None or result.invitation_id != invitation_id:
+                    raise ValueError("Invitation creation failed")
+            else:
+                plugin.zsql_invitation_create(**values)
+                for role in roles:
+                    plugin.zsql_invitation_add_role(invitation_id=invitation_id, role_id=role)
         except Exception:
             transaction.doom()
             raise ValueError("Invitation creation failed") from None
@@ -210,18 +215,20 @@ class SQLUserProvisioning(SimpleItem):
             raise ValueError("Password must contain 12-1024 characters")
         if not isinstance(profile, dict) or set(profile) - {"first_name", "last_name", "display_name", "mobile"}:
             raise ValueError("Unsupported profile fields")
-        profile = {k: text(v, k, 160 if k == "display_name" else 80) for k, v in profile.items()}
+        limits = {"first_name": 80, "last_name": 80, "display_name": 160, "mobile": 40}
+        profile = {k: text(v, k, limits[k]) for k, v in profile.items()}
         plugin = self._plugin()
         row = first_row(plugin.zsql_invitation_get_by_hash(secret_hash=digest))
         if not self._pending(row) or row.claim_nonce:
             raise ValueError("Invitation is invalid or unavailable")
         if row.proposed_user_id and row.proposed_user_id != user_id or row.proposed_login and row.proposed_login != login_name:
             raise ValueError("Identity does not match invitation")
-        # Require the actual connection to be registered in the current Zope
-        # transaction. Autocommit/non-participating adapters cannot provision.
+        # The multi-statement path requires the actual connection to join the
+        # Zope transaction. PostgreSQL instead provides one atomic statement.
         method = plugin.zsql_invitation_get_by_hash
         connection = getattr(plugin, method.connection_id)()
-        if not any(resource is connection or aq_base(resource) is aq_base(connection)
+        atomic = "zsql_invitation_complete_atomic" in plugin.objectIds()
+        if not atomic and not any(resource is connection or aq_base(resource) is aq_base(connection)
                    for resource in transaction.get()._resources):
             raise ValueError("Database adapter must participate in the Zope transaction")
         roles = ordinary_roles([r.role_id for r in plugin.zsql_invitation_roles(invitation_id=row.invitation_id)],
@@ -233,6 +240,18 @@ class SQLUserProvisioning(SimpleItem):
             raise ValueError("Identity already exists")
         nonce, now = secrets.token_hex(32), int(time.time())
         try:
+            if atomic:
+                stored, hash_id = encode_password(password)
+                completed = first_row(plugin.zsql_invitation_complete_atomic(
+                    secret_hash=digest, user_id=user_id, login_name=login_name,
+                    password=stored, password_hash_id=hash_id,
+                    allowed_roles_json=json.dumps(ordinary_roles(list(self.allowed_roles), self.privileged_roles)),
+                    totp_required=int(self.totp_required),
+                    **{key: profile.get(key, "") for key in ("first_name", "last_name", "display_name", "mobile")}))
+                if completed is None or completed.user_id != user_id:
+                    raise ValueError("Invitation unavailable")
+                return dict(user_id=user_id, login_name=login_name,
+                            login_url=aq_parent(aq_inner(self)).absolute_url() + "/sql_user_login_form")
             plugin.zsql_invitation_claim(secret_hash=digest, now=now, claim_nonce=nonce)
             claimed = first_row(plugin.zsql_invitation_get_by_hash(secret_hash=digest))
             if claimed is None or not hmac.compare_digest(str(claimed.claim_nonce), nonce):

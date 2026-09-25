@@ -90,13 +90,45 @@ completion failures after claiming doom the transaction, preventing commit.
 
 ## Transaction boundary and remaining verification
 
-Completion requires the actual database connection to join Zope's current
-transaction. It conditionally claims the invitation, performs a strict identity
-insert, reuses core profile/role helpers and records acceptance. The request's
-transaction manager owns commit/rollback. Adapters with a different registration
-model require explicit compatibility work; they are not automatically accepted.
+PostgreSQL uses one data-modifying CTE statement for invitation creation (including
+its roles), and one for completion. Completion locks and rechecks the invitation,
+strictly inserts the user, profile and role assignments, then records acceptance.
+An error in any write rolls back the entire statement. It works with OpenODBCDA
+1.0.2's autocommit connection pool without changing the adapter. PostgreSQL's
+`jsonb_exists` function is used because its `?` operator conflicts with ODBC
+parameter parsing. No `sql_delimiter` batching or stored procedures are required.
 
-Transactional SQLite tests verify the failure path through Zope's transaction
-manager. Live PostgreSQL, broader concurrency/failure cases and the complete
-application/MailHost examples remain pending. This document is a development
-contract, not a claim that the feature is ready for deployment.
+**Atomicity ends at the SQL statement.** With autocommit, success is durable before
+the surrounding Zope request commits. A later ZODB, template, network or mail
+failure cannot undo it. Do not combine completion with other changes under the
+assumption of a shared transaction. After a lost response, a repeated acceptance
+must not create another account; guide the user to normal login/account recovery.
+Send mail separately and record delivery status through the API.
+
+Other dialects still use the multi-statement completion path, which requires the
+actual connection to join the current Zope transaction and dooms failed
+transactions. That guard remains in place. Their invitation workflows, including
+atomic creation of invitations and roles, are not deployment-verified. Existing
+managed authentication support is unchanged.
+
+On 2026-09-26, six opt-in tests passed on the lab through real Z SQL Methods and
+the published OpenODBCDA 1.0.2 pool against a disposable PostgreSQL database:
+
+- completion, required TOTP state and rejected replay;
+- four concurrent attempts producing exactly one identity;
+- duplicate user ID/login rejection, preserving the existing identity;
+- injected failures at user, profile, catalog, assignment and acceptance writes,
+  with no partial changes and a usable connection afterward;
+- rejected unapproved roles, expired invitations and revoked invitations;
+- failed invitation-role creation rolling back the invitation itself.
+
+The reproducible harness is `tests/live_invitation_postgresql.py`. Run it directly
+with candidate `src` on `PYTHONPATH` and `SQLUW_TEST_DSN` pointing **only to an empty,
+disposable PostgreSQL database**; it creates and truncates its test tables. It is
+not part of the default test suite. The test database and role were removed after
+verification, and no application database was modified.
+
+Transactional SQLite tests separately verify the multi-statement rollback path.
+The chapter 4 browser flow, full application/MailHost examples and Zope 5 wrapper
+confirmation remain pending. The live SQL tests are not an end-to-end deployment
+claim.
