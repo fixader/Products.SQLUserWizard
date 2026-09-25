@@ -6,7 +6,7 @@ from zExceptions import Unauthorized
 
 from Products.SQLUserWizard.installer import SQLUserWizardInstaller
 from Products.SQLUserWizard.invitation_install import enable_invitation_storage
-from test_integration import app_folder, installed
+from test_integration import app_folder, installed, request, post
 
 
 def test_storage_is_explicit_and_repair_preserves_ownership(installed):
@@ -43,3 +43,18 @@ def test_storage_repair_refuses_customized_sql(installed):
     method.src += " -- customized"
     with pytest.raises(ValueError, match="Customized invitation SQL"):
         enable_invitation_storage(installed)
+
+
+def test_setup_page_only_enables_after_protected_post(installed):
+    from zExceptions import Forbidden
+    admin = installed.sql_user_admin
+    assert "Enable invitations" in admin.manage_invitations(request())
+    assert "sql_user_provisioning" not in installed.objectIds()
+    data = dict(enable_invitations="1", invitations_table="test_invites",
+                invitation_roles_table="test_invite_roles", allowed_roles="Member",
+                privileged_roles="SiteAdmin", totp_required="1")
+    with pytest.raises(Forbidden):
+        admin.manage_invitations(request(form=data))
+    assert "enabled" in admin.manage_invitations(post(admin, data))
+    assert installed.sql_user_provisioning.totp_required
+    assert installed.sql_user_provisioning.privileged_roles == ("SiteAdmin",)

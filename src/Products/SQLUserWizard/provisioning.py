@@ -9,7 +9,7 @@ import time
 
 import transaction
 from AccessControl import ClassSecurityInfo, getSecurityManager
-from Acquisition import aq_base, aq_parent
+from Acquisition import aq_base, aq_parent, aq_inner
 from BTrees.OOBTree import OOBTree
 from OFS.SimpleItem import SimpleItem
 from zExceptions import Forbidden, Unauthorized
@@ -25,7 +25,8 @@ ADMINISTER = "SQLUserWizard: Administer invitations"
 COMPLETE = "SQLUserWizard: Complete invitations"
 INSPECT = "SQLUserWizard: Inspect invitations"
 CONTROLLER_ID = "sql_user_provisioning"
-FORBIDDEN_ROLES = frozenset(("Manager", "Owner", "Anonymous", "Authenticated"))
+FORBIDDEN_ROLES = frozenset(("Manager", "Owner", "Anonymous", "Authenticated",
+                             "InvitationInspector", "InvitationCompleter"))
 
 
 def text(value, name, limit, required=False):
@@ -52,7 +53,8 @@ class SQLUserProvisioning(SimpleItem):
 
     meta_type = "SQL User Provisioning"
     security = ClassSecurityInfo()
-    security.declareObjectProtected(ADMINISTER)
+    security.declareObjectPublic()
+    security.setDefaultAccess(False)
     security.setPermissionDefault(ADMINISTER, ("Manager",))
     security.setPermissionDefault(COMPLETE, ("Manager",))
     security.setPermissionDefault(INSPECT, ("Manager",))
@@ -82,7 +84,7 @@ class SQLUserProvisioning(SimpleItem):
             require_post(self, request)
 
     def _plugin(self):
-        folder = aq_parent(self)
+        folder = aq_parent(aq_inner(self))
         pas = folder._getOb(DEFAULT_PAS_ID)
         manifest = json.loads(pas._getOb(DEFAULT_MANIFEST_ID).read())
         feature = manifest.get("invitations", {})
@@ -226,7 +228,7 @@ class SQLUserProvisioning(SimpleItem):
                                self.privileged_roles)
         if not set(roles).issubset(self.allowed_roles):
             raise ValueError("Invitation roles are no longer approved")
-        pas = aq_parent(self)._getOb(DEFAULT_PAS_ID)
+        pas = aq_parent(aq_inner(self))._getOb(DEFAULT_PAS_ID)
         if pas.getUserById(user_id) or pas.getUser(login_name):
             raise ValueError("Identity already exists")
         nonce, now = secrets.token_hex(32), int(time.time())
@@ -251,7 +253,7 @@ class SQLUserProvisioning(SimpleItem):
             transaction.doom()
             raise ValueError("Invitation completion failed; no changes may be committed") from None
         return dict(user_id=user_id, login_name=login_name,
-                    login_url=aq_parent(self).absolute_url() + "/sql_user_login_form")
+                    login_url=aq_parent(aq_inner(self)).absolute_url() + "/sql_user_login_form")
 
 
 InitializeClass(SQLUserProvisioning)

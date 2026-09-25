@@ -50,6 +50,18 @@ Current local result: 150 tests pass, including a completion failure rolled back
 through the Zope transaction manager with a transactional SQLite test adapter.
 This does not yet verify the live PostgreSQL adapter or custom proxy-role scripts.
 
+### Script permissions and setup checkpoint
+
+- Added the explicit Invitations setup tab to SQL User Admin. Its POST/CSRF
+  checks prevent GET or unprotected activation; ordinary installation remains unchanged.
+- Actual Script (Python) tests now verify inspection and completion with narrowly
+  mapped proxy roles, denial without permission, inaccessible private helpers,
+  and lack of controller acquisition from a sibling application.
+- Controller storage resolution uses its physical application even when acquired
+  from a child script. Inspection/completion proxy roles cannot be granted by invites.
+- Added [development API documentation](invitation-api.md). Zope 5, live PostgreSQL,
+  more transaction edge cases and complete application examples remain pending.
+
 No server changes or publication are part of this checkpoint. Package version
 selection remains pending until the feature's compatibility scope is finalized.
 

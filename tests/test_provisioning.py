@@ -102,3 +102,75 @@ def test_failure_dooms_transaction_and_rolls_back_user(transactional, monkeypatc
     transaction.abort()
     assert resource.db.execute("select count(*) from pas_users where user_id='new'").fetchone()[0] == 0
     assert resource.db.execute("select claim_nonce from pas_invitations").fetchone()[0] is None
+
+
+def application_script(folder, name, body, roles=()):
+    from Products.PythonScripts.PythonScript import PythonScript
+    folder._setObject(name, PythonScript(name))
+    script = folder._getOb(name)
+    script.ZPythonScript_edit("token, req", body)
+    script.manage_proxy(roles)
+    script.manage_permission("View", roles=("Anonymous",), acquire=0)
+    return script
+
+
+def test_real_restricted_script_requires_narrow_proxy_role(provisioning):
+    from Products.SQLUserWizard.provisioning import INSPECT
+    folder = provisioning.aq_parent
+    folder._addRole("InvitationInspector")
+    provisioning.manage_permission(INSPECT, roles=("Manager", "InvitationInspector"), acquire=0)
+    invitation = create(provisioning)
+    folder.manage_addFolder("invitations")
+    script = application_script(folder.invitations, "inspect",
+        "return context.sql_user_provisioning.inspect_invitation(token, req)")
+    noSecurityManager()
+    with pytest.raises(Unauthorized):
+        script(invitation["token"], request())
+    # Configuration is done by a manager, never by the anonymous request.
+    from AccessControl.SecurityManagement import newSecurityManager
+    from AccessControl.users import UnrestrictedUser
+    newSecurityManager(None, UnrestrictedUser("test-manager", "", ["Manager"], []))
+    script.manage_proxy(("InvitationInspector",))
+    noSecurityManager()
+    assert script(invitation["token"], request())["valid"]
+
+
+def test_restricted_script_cannot_reach_private_helpers(provisioning):
+    folder = provisioning.aq_parent
+    for index, source in enumerate(("return context.sql_user_provisioning.allowed_roles",
+                   "return context.sql_user_provisioning._plugin()")):
+        script = application_script(folder, "probe" + str(index), source)
+        noSecurityManager()
+        if index:
+            assert any("_plugin" in error for error in script.errors)
+        else:
+            with pytest.raises(Unauthorized):
+                script("", request())
+
+
+def test_real_completion_script_uses_proxy_without_manager(transactional):
+    from Products.SQLUserWizard.provisioning import COMPLETE
+    controller, resource = transactional
+    folder = controller.aq_parent
+    folder._addRole("InvitationCompleter")
+    controller.manage_permission(COMPLETE, roles=("Manager", "InvitationCompleter"), acquire=0)
+    invitation = create(controller)
+    folder.manage_addFolder("invitations")
+    script = application_script(folder.invitations, "complete",
+        'return context.sql_user_provisioning.complete_invitation(token, "new", "new", "long-password", {}, req)',
+        ("InvitationCompleter",))
+    noSecurityManager()
+    req = post(controller, {})
+    assert script(invitation["token"], req)["user_id"] == "new"
+    assert resource.db.execute("select role_id from pas_user_roles where user_id='new'").fetchall() == [("Member",)]
+    assert not req.RESPONSE.cookies.get("sql_user_session")
+
+
+def test_sibling_application_does_not_acquire_controller(provisioning):
+    application = provisioning.aq_parent
+    application.aq_parent.manage_addFolder("Unrelated")
+    script = application_script(application.aq_parent.Unrelated, "inspect",
+        "return context.sql_user_provisioning.inspect_invitation(token, req)")
+    noSecurityManager()
+    with pytest.raises((AttributeError, Unauthorized)):
+        script("x" * 43, request())
