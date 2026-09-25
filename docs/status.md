@@ -96,3 +96,11 @@ any database calls; three regression cases cover this guard.
   for runtime testing on Python 3.8 / Zope 5.
 - Code and documentation are consolidated on `main` for release `v0.2.0a1`.
   PyPI upload is a separate publication step, not implied by the GitHub release.
+
+## TestPyPI publication
+
+Version [0.2.0a1](https://test.pypi.org/project/Products.SQLUserWizard/0.2.0a1/)
+was published as an alpha on 2026-09-25 using GitHub Actions trusted publishing.
+Both published file hashes match the GitHub release artifacts. The
+[publication run](https://github.com/fixader/Products.SQLUserWizard/actions/runs/36183008037)
+completed successfully. Production PyPI has not been updated.

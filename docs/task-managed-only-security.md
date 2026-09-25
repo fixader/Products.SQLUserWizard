@@ -15,11 +15,22 @@ Install / Repair refuses to overwrite differing SQL before database operations.
 
 Fresh installation and scoped upgrades have passed HTTP tests against the lab's
 PostgreSQL database, including a real server restart. The original lab installation
-has been restored. There has been no general deployment or PyPI publication.
+has been restored. There has been no general deployment or production PyPI publication.
+Version 0.2.0a1 is published on TestPyPI as an alpha release.
 
 Remaining confirmation work: direct Lavaart/Lavaart_pg verification and repeats
 on the other historically tested environments. The alpha release records these
 limits explicitly. PyPI upload remains separate from the GitHub release.
+
+### TestPyPI publication completed
+
+- Published 0.2.0a1 through GitHub Actions trusted publishing on 2026-09-25.
+- Workflow: `publish-testpypi.yml`; environment: `testpypi`.
+- Successful run: https://github.com/fixader/Products.SQLUserWizard/actions/runs/36183008037
+- Package: https://test.pypi.org/project/Products.SQLUserWizard/0.2.0a1/
+- Verified alpha classification and both published SHA-256 hashes against the
+  GitHub release artifacts. No API token was needed or stored locally.
+- Production PyPI remains untouched.
 
 All repository content, documentation, code comments and commit messages must be
 in English for an international audience.
