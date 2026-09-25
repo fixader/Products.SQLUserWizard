@@ -13,6 +13,26 @@ in [Optional invitation workflow product](task-optional-invitation-product.md).
 
 ## Implementation status
 
+### Chapter 4 release gate
+
+The user confirmed the Plone Order System case-study server at `192.168.0.74`
+as the integration-test target. Before republishing, inspection of the published
+OpenODBCDA 1.0.2 wheel found that `OpenODBCDatabaseConnection._connect()` uses
+`pyodbc.connect(..., autocommit=True)` and its query pool does not join Zope's
+transaction manager. This is incompatible with atomic invitation completion.
+The current completion guard correctly refuses this adapter.
+
+No new release or server changes have been performed for this test. A decision
+is pending on adding transaction support to OpenODBCDA versus using another
+transaction-participating adapter. Do not remove the guard or treat per-statement
+autocommit as transactional completion. Creation of an invitation and its roles
+also needs the same transaction guarantee before deployment.
+
+The case-study chapter's planned automatic-login wording differs from the agreed
+API: completion creates an identity and redirects to normal login/TOTP; it does
+not issue an authenticated session solely from an invitation token. Update that
+wording when recording the actual chapter verification.
+
 Work is in progress on `feature/invitations`; the published `v0.2.0a1`
 artifacts remain unchanged. This feature is not yet enabled or usable.
 
