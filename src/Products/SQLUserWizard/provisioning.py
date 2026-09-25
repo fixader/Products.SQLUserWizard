@@ -6,11 +6,12 @@ import json
 import re
 import secrets
 import time
+from collections import OrderedDict
+from threading import Lock
 
 import transaction
 from AccessControl import ClassSecurityInfo, getSecurityManager
 from Acquisition import aq_base, aq_parent, aq_inner
-from BTrees.OOBTree import OOBTree
 from OFS.SimpleItem import SimpleItem
 from zExceptions import Forbidden, Unauthorized
 
@@ -27,6 +28,29 @@ INSPECT = "SQLUserWizard: Inspect invitations"
 CONTROLLER_ID = "sql_user_provisioning"
 FORBIDDEN_ROLES = frozenset(("Manager", "Owner", "Anonymous", "Authenticated",
                              "InvitationInspector", "InvitationCompleter"))
+
+
+class _AttemptLimiter:
+    """Bounded per-process limits survive aborted ZODB requests."""
+
+    def __init__(self):
+        self.entries = OrderedDict()
+        self.lock = Lock()
+
+    def check(self, key, now):
+        with self.lock:
+            while self.entries:
+                oldest = next(iter(self.entries))
+                if self.entries[oldest][0] > now:
+                    break
+                self.entries.popitem(last=False)
+            until, count = self.entries.get(key, (now + 300, 0))
+            if count >= 30 or len(self.entries) >= 10000 and key not in self.entries:
+                raise ValueError("Too many invitation attempts")
+            self.entries[key] = (until, count + 1)
+
+
+_attempt_limiter = _AttemptLimiter()
 
 
 def text(value, name, limit, required=False):
@@ -64,7 +88,6 @@ class SQLUserProvisioning(SimpleItem):
         self.allowed_roles = tuple(ordinary_roles(allowed_roles, privileged_roles))
         self.privileged_roles = tuple(privileged_roles)
         self.totp_required = bool(totp_required)
-        self._attempts = OOBTree()
 
     def __bobo_traverse__(self, REQUEST, name):
         if name in ("create_invitation", "inspect_invitation", "list_invitations",
@@ -97,15 +120,8 @@ class SQLUserProvisioning(SimpleItem):
     def _hash(self, token, request):
         # Throttle by caller address, not by attacker-selected token. Use the
         # direct publisher address; deployments must configure trusted proxies.
-        now = int(time.time())
         key = hashlib.sha256(str(request.get("REMOTE_ADDR", "local")).encode()).hexdigest()
-        for old, (until, count) in list(self._attempts.items()):
-            if until <= now:
-                del self._attempts[old]
-        until, count = self._attempts.get(key, (now + 300, 0))
-        if count >= 30 or len(self._attempts) >= 10000 and key not in self._attempts:
-            raise ValueError("Too many invitation attempts")
-        self._attempts[key] = (until, count + 1)
+        _attempt_limiter.check((aq_inner(self).getPhysicalPath(), key), time.monotonic())
         if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
             raise ValueError("Invitation is invalid or unavailable")
         return hashlib.sha256(token.encode("ascii")).hexdigest()
@@ -113,6 +129,12 @@ class SQLUserProvisioning(SimpleItem):
     def _pending(self, row):
         return (row is not None and row.accepted_at is None and row.revoked_at is None
                 and int(row.expires_at) > int(time.time()))
+
+    def _require_transaction(self, plugin):
+        connection = getattr(plugin, plugin.zsql_invitation_get.connection_id)()
+        if not any(resource is connection or aq_base(resource) is aq_base(connection)
+                   for resource in transaction.get()._resources):
+            raise ValueError("Database adapter must participate in the Zope transaction")
 
     def _summary(self, row):
         return {key: getattr(row, key) for key in (
@@ -151,6 +173,10 @@ class SQLUserProvisioning(SimpleItem):
                 if result is None or result.invitation_id != invitation_id:
                     raise ValueError("Invitation creation failed")
             else:
+                # Perform a read to let transactional adapters register before
+                # the first write. Reject autocommit before creating an orphan.
+                plugin.zsql_invitation_get(invitation_id=invitation_id)
+                self._require_transaction(plugin)
                 plugin.zsql_invitation_create(**values)
                 for role in roles:
                     plugin.zsql_invitation_add_role(invitation_id=invitation_id, role_id=role)
@@ -225,12 +251,9 @@ class SQLUserProvisioning(SimpleItem):
             raise ValueError("Identity does not match invitation")
         # The multi-statement path requires the actual connection to join the
         # Zope transaction. PostgreSQL instead provides one atomic statement.
-        method = plugin.zsql_invitation_get_by_hash
-        connection = getattr(plugin, method.connection_id)()
         atomic = "zsql_invitation_complete_atomic" in plugin.objectIds()
-        if not atomic and not any(resource is connection or aq_base(resource) is aq_base(connection)
-                   for resource in transaction.get()._resources):
-            raise ValueError("Database adapter must participate in the Zope transaction")
+        if not atomic:
+            self._require_transaction(plugin)
         roles = ordinary_roles([r.role_id for r in plugin.zsql_invitation_roles(invitation_id=row.invitation_id)],
                                self.privileged_roles)
         if not set(roles).issubset(self.allowed_roles):

@@ -4,6 +4,18 @@ All notable changes to Products.SQLUserWizard are tracked here. The project is
 still in alpha, so entries include lab verification notes when they affect
 install confidence.
 
+## 0.2.0a2 - Unreleased
+
+- Added opt-in invitation storage and a permission-checked Script (Python) API.
+  Ordinary installation and startup do not create invitation tables.
+- Added explicit setup, role restrictions, expiring hashed tokens, rotation,
+  revocation, sanitized inspection and normal login/TOTP after completion.
+- PostgreSQL creation and completion each use one atomic SQL statement, verified
+  through OpenODBCDA 1.0.2. Other dialects require transaction-participating
+  adapters for multi-statement creation and completion.
+- Invitation attempt limits survive aborted requests; limits are per worker.
+- Added application-script examples and a separate optional workflow-product design.
+
 ## 0.2.0a1 - 2026-09-25
 
 ### Changed

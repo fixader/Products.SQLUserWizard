@@ -45,6 +45,32 @@ def test_storage_repair_refuses_customized_sql(installed):
         enable_invitation_storage(installed)
 
 
+def test_storage_repair_restores_missing_method_without_ddl_or_data_loss(installed):
+    enable_invitation_storage(installed, allowed_roles=("Member",), totp_required=True)
+    plugin = installed.acl_users.sql_auth
+    plugin._delObject("zsql_invitation_get")
+    db = installed.test_db._v_db
+    before = list(db.iterdump())
+    queries = []
+    db.set_trace_callback(queries.append)
+    enable_invitation_storage(installed, allowed_roles=("Member",), totp_required=True)
+    db.set_trace_callback(None)
+    assert "zsql_invitation_get" in plugin.objectIds()
+    assert list(db.iterdump()) == before
+    assert not any(sql.lstrip().lower().startswith(("create", "alter", "drop")) for sql in queries)
+    assert installed.sql_user_provisioning.totp_required
+
+
+def test_storage_repair_refuses_changed_policy_without_mutation(installed):
+    enable_invitation_storage(installed, totp_required=True)
+    manifest = installed.acl_users.sql_user_wizard_manifest.read()
+    before = list(installed.test_db._v_db.iterdump())
+    with pytest.raises(ValueError, match="policy"):
+        enable_invitation_storage(installed, totp_required=False)
+    assert installed.acl_users.sql_user_wizard_manifest.read() == manifest
+    assert list(installed.test_db._v_db.iterdump()) == before
+
+
 def test_setup_page_only_enables_after_protected_post(installed):
     from zExceptions import Forbidden
     admin = installed.sql_user_admin

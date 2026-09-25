@@ -74,10 +74,28 @@ strict user insert before the shared profile/role helper. Completion rejects
 non-PostgreSQL adapters that do not join the Zope transaction and dooms failed
 transactions. PostgreSQL uses the single-statement path described above.
 
-Current local result: 157 tests pass. Browser setup and proxy-role integration
+Current local result: 163 tests pass. Browser setup and proxy-role integration
 are implemented. The transactional SQLite tests verify rollback through Zope;
 the separate live PostgreSQL harness verifies the autocommit statement boundary.
-Application examples, upgrade/repair edge cases and chapter 4 verification remain.
+Documented creation, inspection and completion Script (Python) bodies now execute
+in integration tests. Repair tests cover missing methods and refusal of policy
+changes without data or schema mutation. Chapter 4 verification remains pending.
+
+### Release preparation checkpoint, 2026-09-26
+
+- Fixed invitation throttling so aborted requests cannot undo attempt counters.
+  Counters are bounded, process-local and shared across connection instances;
+  public multi-worker deployments need a shared ingress limit.
+- Non-PostgreSQL creation now checks transaction participation before its first
+  write, matching completion's refusal of non-transactional adapters.
+- Added and executed [application script examples](invitation-script-examples.md).
+- Added repair tests for missing SQL methods, preservation of data/schema and
+  rejection of silent policy changes.
+- Next candidate is planned as `0.2.0a2`; the changelog entry is unreleased.
+  Package metadata and published artifacts still identify `0.2.0a1` until the
+  release gates are completed.
+- Chapter 4 access is pending: requested the SSH user and existing key/config for
+  `192.168.0.74`. Do not record the earlier isolated SQL tests as that deployment.
 
 ### Script permissions and setup checkpoint
 

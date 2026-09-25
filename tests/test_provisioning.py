@@ -8,10 +8,21 @@ from Products.SQLUserWizard.invitation_install import enable_invitation_storage
 from test_integration import app_folder, installed, post, request, SQLiteConnection
 
 
+@pytest.fixture(autouse=True)
+def fresh_attempt_limiter(monkeypatch):
+    from Products.SQLUserWizard import provisioning
+    monkeypatch.setattr(provisioning, "_attempt_limiter", provisioning._AttemptLimiter())
+
+
 @pytest.fixture
-def provisioning(installed):
+def provisioning(installed, monkeypatch):
     enable_invitation_storage(installed)
-    return installed.sql_user_provisioning
+    adapter = installed.test_db
+    adapter._v_db.commit()
+    resource = TransactionalSQLite(adapter._v_db)
+    monkeypatch.setattr(SQLiteConnection, "__call__", lambda self: resource)
+    yield installed.sql_user_provisioning
+    transaction.abort()
 
 
 def create(controller, **kw):
@@ -48,10 +59,19 @@ def test_permission_csrf_and_direct_traversal(provisioning):
         provisioning.list_invitations(request())
 
 
-def test_completion_refuses_nontransactional_adapter(provisioning):
+def test_completion_refuses_nontransactional_adapter(provisioning, monkeypatch):
     invitation = create(provisioning)
+    monkeypatch.setattr(SQLiteConnection, "__call__", lambda self: self)
     with pytest.raises(ValueError, match="participate"):
         provisioning.complete_invitation(invitation["token"], "u", "u", "long-password", {}, post(provisioning, {}))
+
+
+def test_creation_refuses_nontransactional_adapter_before_writes(provisioning, monkeypatch):
+    monkeypatch.setattr(SQLiteConnection, "__call__", lambda self: self)
+    with pytest.raises(ValueError, match="creation failed"):
+        create(provisioning)
+    db = provisioning.aq_parent.test_db._v_db
+    assert db.execute("select count(*) from pas_invitations").fetchone()[0] == 0
 
 
 def test_completion_validates_mobile_before_database_writes(provisioning):
@@ -60,6 +80,26 @@ def test_completion_validates_mobile_before_database_writes(provisioning):
         provisioning.complete_invitation(invitation["token"], "u", "u", "long-password",
                                          {"mobile": "1" * 41}, post(provisioning, {}))
     assert provisioning.inspect_invitation(invitation["token"], request())["valid"]
+
+
+def test_failed_attempts_remain_limited_after_transaction_abort(provisioning):
+    for unused in range(30):
+        with pytest.raises(ValueError, match="unavailable"):
+            provisioning.inspect_invitation("invalid", request())
+        transaction.abort()
+    with pytest.raises(ValueError, match="Too many"):
+        provisioning.inspect_invitation("x" * 43, request())
+
+
+def test_attempt_limit_expires_and_is_scoped_by_application():
+    from Products.SQLUserWizard.provisioning import _AttemptLimiter
+    limiter = _AttemptLimiter()
+    for unused in range(30):
+        limiter.check(("app-one", "ip"), 100)
+    with pytest.raises(ValueError, match="Too many"):
+        limiter.check(("app-one", "ip"), 399)
+    limiter.check(("app-two", "ip"), 399)
+    limiter.check(("app-one", "ip"), 400)
 
 
 class TransactionalSQLite(TM):
@@ -74,13 +114,9 @@ class TransactionalSQLite(TM):
 
 
 @pytest.fixture
-def transactional(provisioning, monkeypatch):
+def transactional(provisioning):
     adapter = provisioning.aq_parent.test_db
-    adapter._v_db.commit()
-    resource = TransactionalSQLite(adapter._v_db)
-    monkeypatch.setattr(SQLiteConnection, "__call__", lambda self: resource)
-    yield provisioning, resource
-    transaction.abort()
+    return provisioning, adapter()
 
 
 def test_transactional_completion_and_replay(transactional):
@@ -182,3 +218,33 @@ def test_sibling_application_does_not_acquire_controller(provisioning):
     noSecurityManager()
     with pytest.raises((AttributeError, Unauthorized)):
         script("x" * 43, request())
+
+
+def test_documented_script_bodies_create_inspect_and_complete(transactional):
+    import re
+    from pathlib import Path
+    from Products.SQLUserWizard.provisioning import COMPLETE, INSPECT
+    controller, resource = transactional
+    folder = controller.aq_parent
+    source = (Path(__file__).parents[1] / "docs/invitation-script-examples.md").read_text()
+    bodies = re.findall(r"```python\n(.*?)\n```", source, re.S)[:3]
+    assert len(bodies) == 3
+    folder._addRole("InvitationInspector")
+    folder._addRole("InvitationCompleter")
+    controller.manage_permission(INSPECT, roles=("Manager", "InvitationInspector"), acquire=0)
+    controller.manage_permission(COMPLETE, roles=("Manager", "InvitationCompleter"), acquire=0)
+    scripts = []
+    for index, role in enumerate(((), ("InvitationInspector",), ("InvitationCompleter",))):
+        script = application_script(folder, "documented" + str(index), bodies[index], role)
+        script.ZPythonScript_edit("", bodies[index])
+        assert not script.errors
+        scripts.append(script)
+    folder.REQUEST = post(controller, {"email": "manual@example.invalid"})
+    invitation = scripts[0]()
+    noSecurityManager()
+    folder.REQUEST = request(form={"token": invitation["token"]})
+    assert scripts[1]()["valid"]
+    folder.REQUEST = post(controller, dict(token=invitation["token"], user_id="manual",
+                                           login_name="manual", password="long-password"))
+    assert scripts[2]()["user_id"] == "manual"
+    assert resource.db.execute("select role_id from pas_user_roles where user_id='manual'").fetchall() == [("Member",)]

@@ -17,6 +17,9 @@ managed identity SQL must match the expected contract before enablement;
 customizations require review. Repeated storage repair preserves records and
 rejects silently changed policy or SQL.
 
+See [application Script (Python) examples](invitation-script-examples.md) for a
+manual creation, inspection and completion flow.
+
 ## Application scripts and permissions
 
 Place application scripts in a child folder such as `/ordersystem/invitations`.
@@ -105,10 +108,10 @@ assumption of a shared transaction. After a lost response, a repeated acceptance
 must not create another account; guide the user to normal login/account recovery.
 Send mail separately and record delivery status through the API.
 
-Other dialects still use the multi-statement completion path, which requires the
+Other dialects use multi-statement creation and completion paths, which require the
 actual connection to join the current Zope transaction and dooms failed
-transactions. That guard remains in place. Their invitation workflows, including
-atomic creation of invitations and roles, are not deployment-verified. Existing
+transactions. Creation checks participation before the first write. Their
+invitation workflows are not deployment-verified. Existing
 managed authentication support is unchanged.
 
 On 2026-09-26, six opt-in tests passed on the lab through real Z SQL Methods and
@@ -132,3 +135,11 @@ Transactional SQLite tests separately verify the multi-statement rollback path.
 The chapter 4 browser flow, full application/MailHost examples and Zope 5 wrapper
 confirmation remain pending. The live SQL tests are not an end-to-end deployment
 claim.
+
+## Attempt limits
+
+Inspection and completion share a limit of 30 attempts per five minutes per
+application and caller address in each worker process. The bounded in-memory
+counter survives aborted requests, but resets on process restart and is not shared
+between workers. Configure trusted proxy handling and a shared ingress limit for
+public multi-worker deployments. Invalid token formats also count as attempts.
