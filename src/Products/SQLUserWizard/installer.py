@@ -1203,6 +1203,11 @@ which validates password and optional TOTP before PAS receives credentials.
                 "postgresql_backfills_username_from_login_name": True,
             },
         }
+        existing_manifest = self._local_object(pas, DEFAULT_MANIFEST_ID)
+        if existing_manifest is not None:
+            existing_data = json.loads(self._object_source(existing_manifest))
+            if "invitations" in existing_data:
+                manifest["invitations"] = existing_data["invitations"]
         self._upsert_text_object(
             pas,
             DEFAULT_MANIFEST_ID,

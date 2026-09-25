@@ -2,6 +2,57 @@
 
 Created: 2026-09-25
 
+## Agreed product boundary
+
+Implement the invitation API inside SQLUserWizard first. It must be usable
+directly from authorized application Script (Python) objects without any add-on.
+Invitation storage is always explicitly enabled; neither ordinary installation
+nor startup creates it. A future optional product will supply ready-made pages,
+templates and delivery orchestration using this same API. Its living design is
+in [Optional invitation workflow product](task-optional-invitation-product.md).
+
+## Implementation status
+
+Work is in progress on `feature/invitations`; the published `v0.2.0a1`
+artifacts remain unchanged. This feature is not yet enabled or usable.
+
+First checkpoint implements the private SQL contract in `invitation_sql.py`:
+
+- Separate `pas_invitations` and `pas_invitation_roles` tables; the existing
+  four-table identity mapping is unchanged.
+- Portable normalized role assignments and integer UTC epoch timestamps.
+- Validated identifiers, including collisions with identity table names.
+- Explicit CREATE statements, without silently accepting pre-existing tables.
+- Typed SQL parameters for creation, lookup, listing, rotation, revocation,
+  delivery status, conditional claim and consumption.
+- A per-completion nonce identifies the successful claim without relying on
+  adapter-specific update row counts in the eventual controller.
+- MySQL schema explicitly uses InnoDB for transactional storage.
+- Tests render all six dialects and execute the state transitions and rollback
+  on SQLite. A two-connection concurrent SQLite test permits exactly one claim.
+
+Explicit storage enablement and the controller are now implemented as work in
+progress. Enablement checks catalog collisions and managed ownership, preserves
+the four-table mapping, and refuses customized SQL. Normal manifest refresh
+preserves the optional invitation ownership record.
+
+The controller includes create, inspect, list, rotate, revoke, delivery-status
+and completion operations. It restricts roles, validates requests and uses a
+strict user insert before the shared profile/role helper. Completion rejects
+adapters that do not join the Zope transaction and dooms failed transactions.
+
+Remaining: browser setup UI, permission/proxy-role integration tests, broader
+failure/concurrency coverage through real adapters, application examples,
+upgrade/repair edge cases and isolated live PostgreSQL verification. The feature
+is not ready for release; SQL-level tests alone do not establish end-to-end atomicity.
+
+Current local result: 150 tests pass, including a completion failure rolled back
+through the Zope transaction manager with a transactional SQLite test adapter.
+This does not yet verify the live PostgreSQL adapter or custom proxy-role scripts.
+
+No server changes or publication are part of this checkpoint. Package version
+selection remains pending until the feature's compatibility scope is finalized.
+
 ## Starting state
 
 - Repository: `https://github.com/fixader/Products.SQLUserWizard`
