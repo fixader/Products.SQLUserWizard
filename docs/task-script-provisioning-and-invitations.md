@@ -99,8 +99,14 @@ changes without data or schema mutation. Chapter 4 verification remains pending.
 - Next candidate is planned as `0.2.0a2`; the changelog entry is unreleased.
   Package metadata and published artifacts still identify `0.2.0a1` until the
   release gates are completed.
-- Chapter 4 access is pending: requested the SSH user and existing key/config for
-  `192.168.0.74`. Do not record the earlier isolated SQL tests as that deployment.
+- Chapter 4 access has been recovered and verified using the existing local
+  `~/.codex/scripts/invoke-ordersystemlab-sudo.ps1` helper (its RemoteScriptPath
+  parameter accepts a local UTF-8 shell script with LF line endings). Credentials
+  remain in the existing protected local storage; do not request them again or
+  copy them into Git. Read-only inspection confirmed an active Plone service,
+  SQLUserWizard 0.2.0a1, OpenODBCDA 1.0.2, Zope 6.2 and Plone 6.2.2. The target
+  adapter still needs updating before testing the new invitation workflow.
+  Do not record the earlier isolated SQL tests as this deployment.
 
 ### Script permissions and setup checkpoint
 
