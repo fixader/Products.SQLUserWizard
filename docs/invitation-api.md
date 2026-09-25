@@ -11,6 +11,7 @@ Select unused table names, an allowlist of ordinary roles, any additional
 application-specific privileged roles to reject, and whether enrollment requires
 TOTP. Submit **Enable invitations**. This requires Manage users permission and a
 valid POST/CSRF request. It creates two tables and `sql_user_provisioning`.
+For invitation use with OpenODBCDA, install version 1.1.1 or later.
 
 Ordinary product installation and startup never enable invitations. Existing
 managed identity SQL must match the expected contract before enablement;
@@ -93,29 +94,31 @@ completion failures after claiming doom the transaction, preventing commit.
 
 ## Transaction boundary and remaining verification
 
-PostgreSQL uses one data-modifying CTE statement for invitation creation (including
-its roles), and one for completion. Completion locks and rechecks the invitation,
-strictly inserts the user, profile and role assignments, then records acceptance.
-An error in any write rolls back the entire statement. It works with OpenODBCDA
-1.0.2's autocommit connection pool without changing the adapter. PostgreSQL's
-`jsonb_exists` function is used because its `?` operator conflicts with ODBC
-parameter parsing. No `sql_delimiter` batching or stored procedures are required.
+Invitation creation and completion use the same multi-statement workflow on all
+supported SQL dialects. For OpenODBCDA, use **1.1.1 or later**, the verified release
+with the explicit transaction API. SQLUserWizard begins the transaction, executes
+its Z SQL Methods through the reserved connection and requests commit after all
+checks succeed. The adapter performs the database commit when Zope finishes the
+request; a normal request abort after the commit request still rolls back the SQL.
 
-**Atomicity ends at the SQL statement.** With autocommit, success is durable before
-the surrounding Zope request commits. A later ZODB, template, network or mail
-failure cannot undo it. Do not combine completion with other changes under the
-assumption of a shared transaction. After a lost response, a repeated acceptance
-must not create another account; guide the user to normal login/account recovery.
-Send mail separately and record delivery status through the API.
+Failures roll back the owned transaction and doom the surrounding Zope
+transaction, even if application code catches the error. A failed begin does not
+commit or roll back a caller-owned transaction. Nested explicit transactions are
+not supported: let the controller own the creation/completion transaction.
 
-Other dialects use multi-statement creation and completion paths, which require the
-actual connection to join the current Zope transaction and dooms failed
-transactions. Creation checks participation before the first write. Their
-invitation workflows are not deployment-verified. Existing
-managed authentication support is unchanged.
+After creation or completion, **finish the request without executing more SQL
+through that connector**. OpenODBCDA rejects SQL after commit has been requested.
+Render the returned information or redirect to login; perform further inspection,
+delivery-status updates or other database operations in a separate request.
 
-On 2026-09-26, six opt-in tests passed on the lab through real Z SQL Methods and
-the published OpenODBCDA 1.0.2 pool against a disposable PostgreSQL database:
+Other adapters must join Zope's transaction directly; the controller checks the
+actual connection before writing. Non-participating adapters are refused. There
+is no autocommit fallback or PostgreSQL-specific atomic statement implementation.
+This requirement concerns invitations, not existing managed authentication.
+
+On 2026-09-26, seven live tests passed against a disposable PostgreSQL database
+using the published OpenODBCDA 1.1.1 wheel, its real Zope connector and pool, actual
+Z SQL Methods, and the controller's production creation/completion workflow:
 
 - completion, required TOTP state and rejected replay;
 - four concurrent attempts producing exactly one identity;
@@ -123,18 +126,26 @@ the published OpenODBCDA 1.0.2 pool against a disposable PostgreSQL database:
 - injected failures at user, profile, catalog, assignment and acceptance writes,
   with no partial changes and a usable connection afterward;
 - rejected unapproved roles, expired invitations and revoked invitations;
-- failed invitation-role creation rolling back the invitation itself.
+- failed invitation-role creation rolling back the invitation itself;
+- request abort after commit was requested rolling back user creation and
+  invitation consumption, followed by a successful retry.
 
 The reproducible harness is `tests/live_invitation_postgresql.py`. Run it directly
-with candidate `src` on `PYTHONPATH` and `SQLUW_TEST_DSN` pointing **only to an empty,
-disposable PostgreSQL database**; it creates and truncates its test tables. It is
-not part of the default test suite. The test database and role were removed after
-verification, and no application database was modified.
+with candidate `src` on `PYTHONPATH`, OpenODBCDA 1.1.1 or later installed, and
+`SQLUW_TEST_DSN` pointing **only to an empty, disposable PostgreSQL database**.
+It creates and truncates test tables. Permission/CSRF checks and PAS fallback
+lookup are isolated in this harness; the local integration suite tests those
+boundaries separately. It is not part of the default test suite. Test databases
+and roles were removed afterward; no application database was modified.
 
-Transactional SQLite tests separately verify the multi-statement rollback path.
-The chapter 4 browser flow, full application/MailHost examples and Zope 5 wrapper
-confirmation remain pending. The live SQL tests are not an end-to-end deployment
-claim.
+The adapter's commit coordination is not a distributed two-phase commit guarantee
+across ZODB and multiple databases, nor a guarantee against an ambiguous result
+if the connection fails during physical commit. Do not blindly retry account
+creation after such a failure; inspect state in a new request first.
+
+Live invitation verification on other database families, the chapter 4 browser
+flow and Zope 5 wrapper confirmation remain pending. The SQL workflow is shared;
+that alone does not establish live compatibility on every driver or storage engine.
 
 ## Attempt limits
 

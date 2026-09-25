@@ -16,23 +16,28 @@ in [Optional invitation workflow product](task-optional-invitation-product.md).
 ### Chapter 4 release gate
 
 The user confirmed the Plone Order System case-study server at `192.168.0.74`
-as the integration-test target. OpenODBCDA 1.0.2 uses autocommit and does not join
-Zope's transaction manager. The agreed solution is to keep the adapter unchanged
-and make PostgreSQL invitation creation and completion each a single atomic SQL
-statement. Other dialects retain the transaction-participation completion guard.
+as the integration-test target. OpenODBCDA 1.1.1 now supplies explicit transactions
+that reserve one connection and coordinate the commit request with Zope.
 
-Implemented and verified on 2026-09-26: six live tests through Z SQL Methods and
-the published OpenODBCDA 1.0.2 wheel passed on lab `192.168.0.12`, using a disposable
-PostgreSQL database. They cover four simultaneous completions, replay, duplicate
-identities, expiry/revocation/roles, failures at every completion write stage,
-creation rollback, and usable connections after failure. The temporary database
-and role were removed. No chapter 4 application state or published release changed.
+The user explicitly requested removing the older-adapter compatibility path.
+The PostgreSQL-specific single-statement module and templates have therefore been
+removed. Creation and completion now share the multi-statement workflow across
+dialects. SQLUserWizard owns begin/commit-request/rollback on adapters exposing
+the explicit API. Other adapters must actually participate in the current Zope
+transaction; unsupported autocommit connections are refused before writing.
 
-ODBC interpreted PostgreSQL's `?` JSON operator as a parameter; using
-`jsonb_exists` resolved the verified incompatibility. The opt-in test harness is
-`tests/live_invitation_postgresql.py`. See [transaction boundaries](invitation-api.md#transaction-boundary-and-remaining-verification)
-for the explicit limitation: a later Zope/ZODB or response failure cannot roll
-back a successful autocommit SQL statement. This is not a distributed transaction.
+Verified on 2026-09-26: seven live tests passed with the published OpenODBCDA 1.1.1
+wheel on lab `192.168.0.12`, using the real connector, Z SQL Methods and production
+controller workflow against a disposable PostgreSQL database. This includes
+failure at every write stage, creation rollback, duplicate identity rejection,
+four concurrent completions, and a request abort after commit was requested.
+The latter rolled back both the identity and invitation consumption and allowed
+a later successful retry. The test database and role were removed afterward.
+
+The previous six OpenODBCDA 1.0.2 single-statement tests are superseded evidence
+for the removed implementation. They are not the current transaction contract.
+See the [API transaction boundary](invitation-api.md#transaction-boundary-and-remaining-verification)
+for request ownership, no further SQL after commit request, and commit-time limits.
 
 Remaining release gates include chapter 4 application testing, examples,
 upgrade/repair review, distribution checks, version selection and republication.
@@ -71,12 +76,12 @@ preserves the optional invitation ownership record.
 The controller includes create, inspect, list, rotate, revoke, delivery-status
 and completion operations. It restricts roles, validates requests and uses a
 strict user insert before the shared profile/role helper. Completion rejects
-non-PostgreSQL adapters that do not join the Zope transaction and dooms failed
-transactions. PostgreSQL uses the single-statement path described above.
+adapters lacking supported transaction participation and dooms failed transactions.
+The shared workflow uses the new explicit adapter API where available.
 
-Current local result: 163 tests pass. Browser setup and proxy-role integration
+Current local result: 165 tests pass. Browser setup and proxy-role integration
 are implemented. The transactional SQLite tests verify rollback through Zope;
-the separate live PostgreSQL harness verifies the autocommit statement boundary.
+the separate live PostgreSQL harness verifies the explicit adapter transaction boundary.
 Documented creation, inspection and completion Script (Python) bodies now execute
 in integration tests. Repair tests cover missing methods and refusal of policy
 changes without data or schema mutation. Chapter 4 verification remains pending.

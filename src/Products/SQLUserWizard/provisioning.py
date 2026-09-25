@@ -6,6 +6,7 @@ import json
 import re
 import secrets
 import time
+from contextlib import contextmanager
 from collections import OrderedDict
 from threading import Lock
 
@@ -136,6 +137,32 @@ class SQLUserProvisioning(SimpleItem):
                    for resource in transaction.get()._resources):
             raise ValueError("Database adapter must participate in the Zope transaction")
 
+    @contextmanager
+    def _write_transaction(self, plugin):
+        connector = getattr(plugin, plugin.zsql_invitation_get.connection_id)
+        explicit = all(callable(getattr(aq_base(connector), name, None)) for name in
+                       ("begin_transaction", "commit_transaction", "rollback_transaction"))
+        if not explicit:
+            plugin.zsql_invitation_get(invitation_id="")
+            self._require_transaction(plugin)
+            yield
+            return
+        # Own only the transaction begun here; never commit or roll back an
+        # existing caller-owned transaction when begin rejects nesting.
+        connector.begin_transaction()
+        try:
+            yield
+            connector.commit_transaction()
+        except BaseException:
+            try:
+                connector.rollback_transaction()
+            except Exception:
+                # The adapter may already have aborted a failed commit request.
+                # Doom the Zope transaction regardless of cleanup outcome.
+                pass
+            transaction.doom()
+            raise
+
     def _summary(self, row):
         return {key: getattr(row, key) for key in (
             "invitation_id", "email", "phone", "proposed_user_id", "proposed_login",
@@ -168,15 +195,7 @@ class SQLUserProvisioning(SimpleItem):
                       created_at=now, expires_at=now + expires_in)
         plugin = self._plugin()
         try:
-            if "zsql_invitation_create_atomic" in plugin.objectIds():
-                result = first_row(plugin.zsql_invitation_create_atomic(roles_json=json.dumps(roles), **values))
-                if result is None or result.invitation_id != invitation_id:
-                    raise ValueError("Invitation creation failed")
-            else:
-                # Perform a read to let transactional adapters register before
-                # the first write. Reject autocommit before creating an orphan.
-                plugin.zsql_invitation_get(invitation_id=invitation_id)
-                self._require_transaction(plugin)
+            with self._write_transaction(plugin):
                 plugin.zsql_invitation_create(**values)
                 for role in roles:
                     plugin.zsql_invitation_add_role(invitation_id=invitation_id, role_id=role)
@@ -249,11 +268,6 @@ class SQLUserProvisioning(SimpleItem):
             raise ValueError("Invitation is invalid or unavailable")
         if row.proposed_user_id and row.proposed_user_id != user_id or row.proposed_login and row.proposed_login != login_name:
             raise ValueError("Identity does not match invitation")
-        # The multi-statement path requires the actual connection to join the
-        # Zope transaction. PostgreSQL instead provides one atomic statement.
-        atomic = "zsql_invitation_complete_atomic" in plugin.objectIds()
-        if not atomic:
-            self._require_transaction(plugin)
         roles = ordinary_roles([r.role_id for r in plugin.zsql_invitation_roles(invitation_id=row.invitation_id)],
                                self.privileged_roles)
         if not set(roles).issubset(self.allowed_roles):
@@ -263,32 +277,21 @@ class SQLUserProvisioning(SimpleItem):
             raise ValueError("Identity already exists")
         nonce, now = secrets.token_hex(32), int(time.time())
         try:
-            if atomic:
-                stored, hash_id = encode_password(password)
-                completed = first_row(plugin.zsql_invitation_complete_atomic(
-                    secret_hash=digest, user_id=user_id, login_name=login_name,
-                    password=stored, password_hash_id=hash_id,
-                    allowed_roles_json=json.dumps(ordinary_roles(list(self.allowed_roles), self.privileged_roles)),
-                    totp_required=int(self.totp_required),
-                    **{key: profile.get(key, "") for key in ("first_name", "last_name", "display_name", "mobile")}))
-                if completed is None or completed.user_id != user_id:
+            with self._write_transaction(plugin):
+                plugin.zsql_invitation_claim(secret_hash=digest, now=now, claim_nonce=nonce)
+                claimed = first_row(plugin.zsql_invitation_get_by_hash(secret_hash=digest))
+                if claimed is None or not hmac.compare_digest(str(claimed.claim_nonce), nonce):
                     raise ValueError("Invitation unavailable")
-                return dict(user_id=user_id, login_name=login_name,
-                            login_url=aq_parent(aq_inner(self)).absolute_url() + "/sql_user_login_form")
-            plugin.zsql_invitation_claim(secret_hash=digest, now=now, claim_nonce=nonce)
-            claimed = first_row(plugin.zsql_invitation_get_by_hash(secret_hash=digest))
-            if claimed is None or not hmac.compare_digest(str(claimed.claim_nonce), nonce):
-                raise ValueError("Invitation unavailable")
-            stored, hash_id = encode_password(password)
-            plugin.zsql_invitation_insert_user(user_id=user_id, login_name=login_name,
-                                               password=stored, password_hash_id=hash_id, email=row.email)
-            save_sql_user(plugin, user_id, login_name, recovery_email=row.email, email=row.email,
-                          roles=roles, totp_required=self.totp_required, **profile)
-            plugin.zsql_invitation_consume(invitation_id=row.invitation_id, claim_nonce=nonce,
-                                           now=int(time.time()), user_id=user_id)
-            completed = first_row(plugin.zsql_invitation_get(invitation_id=row.invitation_id))
-            if completed.accepted_at is None or completed.result_user_id != user_id:
-                raise ValueError("Invitation unavailable")
+                stored, hash_id = encode_password(password)
+                plugin.zsql_invitation_insert_user(user_id=user_id, login_name=login_name,
+                                                   password=stored, password_hash_id=hash_id, email=row.email)
+                save_sql_user(plugin, user_id, login_name, recovery_email=row.email, email=row.email,
+                              roles=roles, totp_required=self.totp_required, **profile)
+                plugin.zsql_invitation_consume(invitation_id=row.invitation_id, claim_nonce=nonce,
+                                               now=int(time.time()), user_id=user_id)
+                completed = first_row(plugin.zsql_invitation_get(invitation_id=row.invitation_id))
+                if completed.accepted_at is None or completed.result_user_id != user_id:
+                    raise ValueError("Invitation unavailable")
         except Exception:
             # Even if an application script catches this error, its transaction
             # cannot commit a partial identity. The publisher owns final commit.

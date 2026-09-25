@@ -62,7 +62,7 @@ def test_permission_csrf_and_direct_traversal(provisioning):
 def test_completion_refuses_nontransactional_adapter(provisioning, monkeypatch):
     invitation = create(provisioning)
     monkeypatch.setattr(SQLiteConnection, "__call__", lambda self: self)
-    with pytest.raises(ValueError, match="participate"):
+    with pytest.raises(ValueError, match="completion failed"):
         provisioning.complete_invitation(invitation["token"], "u", "u", "long-password", {}, post(provisioning, {}))
 
 
@@ -100,6 +100,35 @@ def test_attempt_limit_expires_and_is_scoped_by_application():
         limiter.check(("app-one", "ip"), 399)
     limiter.check(("app-two", "ip"), 399)
     limiter.check(("app-one", "ip"), 400)
+
+
+@pytest.mark.parametrize("failure", [None, "begin", "commit"])
+def test_explicit_transaction_ownership_and_abort(provisioning, monkeypatch, failure):
+    calls = []
+    def begin(self):
+        calls.append("begin")
+        if failure == "begin":
+            raise RuntimeError("Caller already owns a transaction")
+    def commit(self):
+        calls.append("commit")
+        if failure == "commit":
+            raise RuntimeError("Commit request failed")
+    def rollback(self):
+        calls.append("rollback")
+    for name, method in (("begin_transaction", begin), ("commit_transaction", commit),
+                         ("rollback_transaction", rollback)):
+        monkeypatch.setattr(SQLiteConnection, name, method, raising=False)
+    if failure:
+        with pytest.raises(ValueError, match="creation failed"):
+            create(provisioning)
+        assert transaction.isDoomed()
+    else:
+        create(provisioning)
+    assert calls == {None: ["begin", "commit"], "begin": ["begin"],
+                     "commit": ["begin", "commit", "rollback"]}[failure]
+    transaction.abort()
+    assert provisioning.aq_parent.test_db._v_db.execute(
+        "select count(*) from pas_invitations").fetchone()[0] == 0
 
 
 class TransactionalSQLite(TM):

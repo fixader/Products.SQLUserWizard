@@ -90,7 +90,8 @@ or recovery instead of creating another account.
 
 Handle expected validation errors with a generic message. A database failure can
 doom the surrounding transaction: let the publisher abort it; do not commit after
-catching such a failure. PostgreSQL autocommit boundaries are documented in the
+catching such a failure. Finish creation/completion requests without further SQL through the same connector.
+Explicit transaction boundaries are documented in the
 [API reference](invitation-api.md#transaction-boundary-and-remaining-verification).
 
 The future optional product will provide complete pages, permission setup and

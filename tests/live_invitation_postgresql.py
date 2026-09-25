@@ -3,82 +3,116 @@
 Run directly with Python, with the candidate src on PYTHONPATH and
 Products.OpenODBCDA installed. Never point this at an application database.
 """
-import json
 import os
-import time
 import unittest
+import transaction
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 from OFS.Folder import Folder
 from OFS.SimpleItem import SimpleItem
 from Products.ZSQLMethods.SQL import SQL
-from Products.OpenODBCDA.db import OpenODBCDatabaseConnection
+from Products.OpenODBCDA.connection import OpenODBCConnection
 from Products.SQLUserWizard.config import DEFAULT_TABLES, postgresql_templates
 from Products.SQLUserWizard.invitation_sql import invitation_templates
+from Products.SQLUserWizard.provisioning import SQLUserProvisioning
 
 
-class LabConnection(SimpleItem):
-    """Acquisition bridge to the real OpenODBCDA pool used by Z SQL Methods."""
-    id = 'lab_db'
+class NoFallbackUsers(SimpleItem):
+    # The database uniqueness constraints are deliberately authoritative here.
+    def getUserById(self, user_id):
+        return None
 
-    def __init__(self, pool):
-        self.pool = pool
+    def getUser(self, login):
+        return None
 
-    def __call__(self):
-        return self.pool
 
-    def sql_quote__(self, value):
-        return "'" + value.replace("'", "''") + "'"
+class DatabaseTestController(SQLUserProvisioning):
+    # Permission/CSRF/PAS placement are covered by the local integration suite.
+    # This harness executes the production controller's database workflow.
+    def _check(self, *args, **kwargs):
+        pass
+
+    def _plugin(self):
+        return self.aq_parent
 
 
 class AtomicInvitations(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.db = OpenODBCDatabaseConnection(os.environ['SQLUW_TEST_DSN'], pool_size=4)
+        connector = OpenODBCConnection('lab_db', 'Disposable test',
+            connection_string=os.environ['SQLUW_TEST_DSN'], pool_enabled=True, pool_size=4, check=True)
+        cls.db = connector()
         cls.specs = invitation_templates('postgresql', identity_tables=DEFAULT_TABLES)
         cls.folder = Folder('lab')
-        cls.folder._setObject('lab_db', LabConnection(cls.db))
-        for spec in cls.specs.values():
+        cls.folder._setObject('lab_db', connector)
+        cls.folder._setObject('acl_users', NoFallbackUsers())
+        cls.folder._setObject('sql_user_provisioning', DatabaseTestController(('Member',), totp_required=True))
+        cls.controller = cls.folder.sql_user_provisioning
+        specs = postgresql_templates()
+        for spec in list(cls.specs.values()) + list(specs.values()):
             method = SQL(spec['id'], spec['title'], 'lab_db', spec['arguments'], spec['template'])
             method.max_cache_ = 0
             method.cache_time_ = 0
             cls.folder._setObject(spec['id'], method)
-        # Refuse existing managed tables before executing any DDL.
         assert not cls.db.query("select tablename from pg_tables where schemaname='public'")[1]
-        specs = postgresql_templates()
         for key in ('setup_users', 'setup_profiles', 'setup_roles', 'setup_user_roles'):
             cls.db.query(specs[key]['template'])
         for key in ('setup', 'setup_roles'):
-            cls.run_sql(key)
-
-    @classmethod
-    def run_sql(cls, key, **values):
-        return cls.folder._getOb(cls.specs[key]['id'])(**values)
+            cls.db.query(cls.specs[key]['template'])
 
     def setUp(self):
+        transaction.abort()
+        self.tokens = {}
         self.db.query('truncate pas_invitation_roles, pas_invitations, pas_user_roles, '
                       'pas_user_profiles, pas_roles, pas_users')
 
-    def invite(self, key='one', roles=('Member',)):
-        return self.run_sql('create_atomic', invitation_id=key, secret_hash=key,
-            email="o'hara@example.invalid", phone='', proposed_user_id='', proposed_login='',
-            identity_reference='', creator_id='manager', created_at=int(time.time()),
-            expires_at=int(time.time()) + 3600, roles_json=json.dumps(roles))
+    def tearDown(self):
+        transaction.abort()
+        self.assertEqual(self.db.active_transaction_count(), 0)
 
-    def complete(self, key='one', user='new', login=None):
-        return self.run_sql('complete_atomic', secret_hash=key, user_id=user,
-            login_name=login or user, password='test-hash', password_hash_id='authencoding',
-            allowed_roles_json='["Member"]', totp_required=1,
-            first_name='Test', last_name='', display_name='', mobile='')
+    @classmethod
+    def tearDownClass(cls):
+        cls.db.close()
+
+    def invite(self, key='one', roles=('Member',)):
+        try:
+            result = type(self).controller.create_invitation("o'hara@example.invalid", list(roles),
+                                                       {'REMOTE_ADDR': self.id()})
+            self.tokens[key] = result['token']
+            transaction.commit()
+            return result
+        except BaseException:
+            transaction.abort()
+            raise
+
+    def complete(self, key='one', user='new', login=None, finish=True):
+        try:
+            result = type(self).controller.complete_invitation(self.tokens[key], user, login or user,
+                'long-test-password', {}, {'REMOTE_ADDR': self.id()})
+            if finish:
+                transaction.commit()
+            return result
+        except BaseException:
+            transaction.abort()
+            raise
+
+    def test_request_abort_after_commit_requested_rolls_back(self):
+        self.invite()
+        self.complete(finish=False)
+        transaction.abort()
+        self.assertEqual(self.count('pas_users'), 0)
+        self.assertEqual(self.db.query('select accepted_at, claim_nonce from pas_invitations')[1][0], (None, None))
+        self.assertTrue(self.complete())
 
     def count(self, table):
         return self.db.query('select count(*) from ' + table)[1][0][0]
 
     def test_complete_and_replay(self):
         self.invite()
-        self.assertEqual(len(self.complete()), 1)
-        self.assertFalse(self.complete(user='replay'))
+        self.assertEqual(self.complete()['user_id'], 'new')
+        with self.assertRaises(ValueError):
+            self.complete(user='replay')
         for table in DEFAULT_TABLES.values():
             self.assertEqual(self.count(table), 1)
         row = self.db.query('select recovery_email from pas_users '
@@ -90,7 +124,10 @@ class AtomicInvitations(unittest.TestCase):
         start = Barrier(4)
         def attempt(n):
             start.wait()
-            return self.complete(user='user' + str(n))
+            try:
+                return self.complete(user='user' + str(n))
+            except ValueError:
+                return None
         with ThreadPoolExecutor(max_workers=4) as pool:
             results = list(pool.map(attempt, range(4)))
         self.assertEqual(sum(bool(r) for r in results), 1)
@@ -105,8 +142,9 @@ class AtomicInvitations(unittest.TestCase):
             with self.subTest(table=table):
                 self.setUp()
                 self.invite()
+                condition = ' when (new.accepted_at is not null)' if table == 'pas_invitations' else ''
                 self.db.query('create trigger fail_test before ' + event + ' on ' + table +
-                              ' for each row execute function fail_invitation_test()')
+                              ' for each row' + condition + ' execute function fail_invitation_test()')
                 try:
                     with self.assertRaises(Exception):
                         self.complete()
@@ -116,7 +154,7 @@ class AtomicInvitations(unittest.TestCase):
                     self.assertEqual(self.db.query('select accepted_at, result_user_id from pas_invitations')[1][0], (None, None))
                 finally:
                     self.db.query('drop trigger fail_test on ' + table)
-                self.assertEqual(len(self.complete()), 1)
+                self.assertEqual(self.complete()['user_id'], 'new')
 
     def test_duplicate_identity_preserves_existing_user_and_invitation(self):
         self.invite()
@@ -126,24 +164,35 @@ class AtomicInvitations(unittest.TestCase):
             with self.assertRaises(Exception):
                 self.complete('two', user, login)
             self.assertEqual(self.count('pas_users'), 1)
-        self.assertEqual(len(self.complete('two', 'unique')), 1)
+        self.assertEqual(self.complete('two', 'unique')['user_id'], 'unique')
 
     def test_invalid_roles_and_revoked_or_expired_invites(self):
-        self.invite(roles=('Manager',))
-        self.assertFalse(self.complete())
+        self.invite()
+        self.db.query("update pas_invitation_roles set role_id='Manager'")
+        with self.assertRaises(ValueError):
+            self.complete()
         self.setUp()
         self.invite()
         self.db.query('update pas_invitations set expires_at=1')
-        self.assertFalse(self.complete())
+        with self.assertRaises(ValueError):
+            self.complete()
         self.db.query('update pas_invitations set expires_at=9999999999, revoked_at=1')
-        self.assertFalse(self.complete())
+        with self.assertRaises(ValueError):
+            self.complete()
         self.assertEqual(self.count('pas_users'), 0)
 
     def test_invitation_role_failure_rolls_back_parent(self):
-        with self.assertRaises(Exception):
-            self.invite(roles=('Member', 'Member'))
-        self.assertEqual(self.count('pas_invitations'), 0)
-        self.assertEqual(self.count('pas_invitation_roles'), 0)
+        self.db.query("create or replace function fail_create_test() returns trigger "
+                      "language plpgsql as $$ begin raise exception 'injected failure'; end $$")
+        self.db.query('create trigger fail_create before insert on pas_invitation_roles '
+                      'for each row execute function fail_create_test()')
+        try:
+            with self.assertRaises(ValueError):
+                self.invite()
+            self.assertEqual(self.count('pas_invitations'), 0)
+            self.assertEqual(self.count('pas_invitation_roles'), 0)
+        finally:
+            self.db.query('drop trigger fail_create on pas_invitation_roles')
         self.invite()
 
 

@@ -10,9 +10,11 @@ install confidence.
   Ordinary installation and startup do not create invitation tables.
 - Added explicit setup, role restrictions, expiring hashed tokens, rotation,
   revocation, sanitized inspection and normal login/TOTP after completion.
-- PostgreSQL creation and completion each use one atomic SQL statement, verified
-  through OpenODBCDA 1.0.2. Other dialects require transaction-participating
-  adapters for multi-statement creation and completion.
+- Invitation creation and completion share a transaction-based SQL workflow.
+  Verified OpenODBCDA 1.1.1 explicit begin/commit-request/rollback integration,
+  including rollback after a later request abort. Removed the development-only
+  PostgreSQL single-statement workaround; other adapters must participate in
+  Zope transactions before writing.
 - Invitation attempt limits survive aborted requests; limits are per worker.
 - Added application-script examples and a separate optional workflow-product design.
 

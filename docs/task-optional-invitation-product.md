@@ -73,11 +73,12 @@ Because raw tokens cannot be recovered, a later retry may require explicit
 rotation and a newly generated link. Do not promise transparent resend of an
 existing secret.
 
-PostgreSQL core operations may commit immediately through an autocommit adapter.
-The add-on must not assume a later Zope request failure undoes an invitation or
-account. After an ambiguous response, offer normal login/account recovery for an
-accepted invitation. Keep mail delivery separate from database completion; see
-the core [transaction boundary](invitation-api.md#transaction-boundary-and-remaining-verification).
+Core creation and completion own an explicit transaction with OpenODBCDA 1.1.1
+or later. After either returns, the add-on must finish the request without more
+SQL through that connector: the database commit is requested and deferred until
+Zope completes the request. Send mail after successful commit and record delivery
+in a separate request/transaction. Do not nest a caller-owned transaction around
+the core operation. See the core [transaction boundary](invitation-api.md#transaction-boundary-and-remaining-verification).
 
 ## Permissions and security
 

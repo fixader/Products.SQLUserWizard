@@ -115,7 +115,4 @@ where invitation_id={value('invitation_id')}""")
 (user_id, username, password, password_hash_id, recovery_email, enabled)
 values ({value('user_id')}, {value('login_name')}, {value('password')},
 {value('password_hash_id')}, {value('email')}, {_sql_true(dialect)})""")
-        if dialect == "postgresql":
-            from .invitation_postgresql import atomic_templates
-            specs.update(atomic_templates(tables, identity_tables))
     return specs

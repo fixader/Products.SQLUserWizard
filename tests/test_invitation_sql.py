@@ -37,22 +37,6 @@ def test_invitation_names_cannot_collide_or_inject_sql():
             validate_invitation_tables(dict(DEFAULT_INVITATION_TABLES, invitations=name), DEFAULT_TABLES)
 
 
-def test_postgresql_atomic_methods_render_odbc_safe_parameters():
-    specs = invitation_templates('postgresql', identity_tables=DEFAULT_TABLES)
-    values = dict(invitation_id='id', secret_hash='digest', email="o'hara@example.invalid",
-                  phone='', proposed_user_id='', proposed_login='', identity_reference='',
-                  creator_id='manager', created_at=1, expires_at=100, roles_json='["Member"]',
-                  user_id='u', login_name='u', password="a'b", password_hash_id='authencoding',
-                  allowed_roles_json='["Member"]', totp_required=1,
-                  first_name='', last_name='', display_name='', mobile='')
-    for name in ('create_atomic', 'complete_atomic'):
-        sql = render(specs[name], **values)
-        assert '<dtml' not in sql
-        assert '?' not in sql  # ODBC interprets PostgreSQL's ? operator as a parameter.
-        assert '\0' not in sql
-    assert "'a''b'" in render(specs['complete_atomic'], **values)
-    assert 'complete_atomic' not in invitation_templates('sqlite', identity_tables=DEFAULT_TABLES)
-
 
 def test_sqlite_invitation_claim_rotation_revoke_and_rollback():
     db = sqlite3.connect(":memory:")
