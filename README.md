@@ -33,9 +33,17 @@ remain ordinary Zope objects that developers can inspect and maintain.
 - Existing managed SQLUserWizard installations, including completed migrations,
   upgrading their authentication runtime while retaining users and table names.
 
-Version 0.2 simplifies setup to one installation model. The previous auth-only
-and migration tools have been removed; they are not required to use the wizard
-with an existing application. See [upgrade boundaries](docs/upgrade.md) for
+Version 0.2 retains the core product: PAS setup, database adapters, product-owned
+tables, roles, profiles, administration and fallback access. The removed features
+are the transition path from other SQL-backed `acl_users` implementations:
+direct authentication against their existing tables (`auth_only`) and built-in
+migration/takeover. This is a focused reduction in scope, not a replacement of
+the database integration model. It removes substantial schema-mapping and
+migration complexity while preserving the normal managed installation.
+
+The main new runtime changes are the security fixes and server-side sessions.
+These need fresh verification independently of the removed transition features.
+See [upgrade boundaries](docs/upgrade.md) for
 older installations and [release history](CHANGELOG.md) for the earlier design.
 
 ## Database and Zope compatibility

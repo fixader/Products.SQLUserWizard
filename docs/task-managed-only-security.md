@@ -30,6 +30,11 @@ of security, profiles and application data. Historically verified managed
 database/Zope combinations remain expected to work; candidate revalidation is
 tracked separately and must not be confused with withdrawal of support.
 
+Scope clarification: removal is focused on the transition path from other
+SQL-backed `acl_users` implementations, including auth-only mapping and migration.
+Core managed functionality remains. The major runtime changes requiring new
+verification are security enforcement and sessions, not a new database model.
+
 The original planning checklists and chronological notes below are retained as
 history. Later decisions and this current-status section supersede earlier notes.
 
