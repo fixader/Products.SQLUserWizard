@@ -62,6 +62,8 @@ class SQLUserAdmin(SimpleItem):
 
     def manage_invitations(self, REQUEST=None):
         """Explicitly enable invitation storage and its script-facing controller."""
+        if REQUEST is not None:
+            REQUEST.RESPONSE.setHeader("Content-Type", "text/html; charset=utf-8")
         from .invitation_install import enable_invitation_storage
         from .sqladmin import normalize_roles
         from .invitation_sql import DEFAULT_INVITATION_TABLES
