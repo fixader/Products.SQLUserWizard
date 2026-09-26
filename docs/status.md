@@ -12,7 +12,15 @@ transaction.
 The candidate source and repaired persistent invitation scripts are installed
 on the Plone 6.2.2 / Zope 6.2 chapter lab. The live admin profile renders one
 fieldset with all three configured address fields, and both generated public
-scripts compile with their narrow proxy roles. TestPyPI publication is pending.
+scripts compile with their narrow proxy roles.
+
+Version [0.2.0b2](https://test.pypi.org/project/Products.SQLUserWizard/0.2.0b2/)
+was published through GitHub Actions trusted publishing. The downloaded wheel
+has SHA-256
+`56af60dcf1de6b19d31dc3961bad72b762c4353285d6f5f62106f15dee734bc0`,
+matching the verified GitHub prerelease asset. The
+[publication run](https://github.com/fixader/Products.SQLUserWizard/actions/runs/36241806511)
+completed successfully. Production PyPI has not been updated.
 
 ## Invitation development checkpoint, 2026-09-26
 
