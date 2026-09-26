@@ -47,6 +47,15 @@ def _key(obj):
     key = getattr(aq_base(obj), "_csrf_key", None)
     if key is None:
         obj._csrf_key = key = secrets.token_bytes(32)
+        # Plone can abort writes made while rendering a GET form. Persist only
+        # this controller's initial CSRF key so the following POST can validate
+        # it. Plone's own form authenticator remains enabled and required.
+        try:
+            from plone.protect.utils import safeWrite
+        except ImportError:
+            pass
+        else:
+            safeWrite(obj)
     return key
 
 

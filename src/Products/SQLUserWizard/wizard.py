@@ -261,9 +261,8 @@ class SQLUserWizard(SimpleItem):
               <option value="oracle12c" {'selected' if self.dialect == 'oracle12c' else ''}>Oracle 12c+ managed</option>
             </select>
           </label>
-          <p class="help">Managed mode creates product-owned tables. Auth-only
-          mode only reads an existing Zope-style user schema and is the safe
-          first step before taking control.</p>
+          <p class="help">Managed mode creates product-owned tables. Import any
+          existing user data separately after installation.</p>
         </fieldset>
         <fieldset>
           <legend>Fallback Access</legend>
