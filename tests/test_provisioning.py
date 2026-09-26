@@ -270,6 +270,40 @@ def test_transactional_completion_and_replay(transactional):
     resource._registered = 0
 
 
+def test_invitation_uses_one_profile_section_and_saves_configured_fields(transactional):
+    import json
+    from Products.SQLUserWizard.profile_fields import normalize_definition
+
+    controller, resource = transactional
+    controller.aq_parent.sql_user_admin.profile_fields = (
+        normalize_definition("city", "City"),
+    )
+    invitation = create(controller)
+    req = post(controller, {
+        "first_name": "Rune",
+        "last_name": "Fredriksen",
+        "display_name": "Fixader",
+        "mobile": "+4701234567",
+        "city": "Oslo",
+    })
+
+    form_html = controller.render_invitation_profile_fields(invitation["token"], request())
+    profile = controller.invitation_profile_from_request(req)
+    controller.complete_invitation(
+        invitation["token"], "rf", "rf", "long-password", profile, req)
+
+    assert form_html.count("<fieldset") == 1
+    assert "<legend>Profile</legend>" in form_html
+    assert 'name="first_name"' in form_html
+    assert 'name="email"' in form_html and "readonly" in form_html
+    assert 'name="city"' in form_html
+    assert "Additional profile information" not in form_html
+    stored = resource.db.execute(
+        "select profile_data from pas_user_profiles where user_id='rf'"
+    ).fetchone()[0]
+    assert json.loads(stored) == {"city": "Oslo"}
+
+
 def test_failure_dooms_transaction_and_rolls_back_user(transactional, monkeypatch):
     controller, resource = transactional
     invitation = create(controller)

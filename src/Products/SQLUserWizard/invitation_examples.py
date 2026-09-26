@@ -111,12 +111,7 @@ result = context.sql_user_provisioning.complete_invitation(
     user_id=req.form.get("login_name", ""),
     login_name=req.form.get("login_name", ""),
     password=req.form.get("password", ""),
-    profile={
-        "first_name": req.form.get("first_name", ""),
-        "last_name": req.form.get("last_name", ""),
-        "display_name": req.form.get("display_name", ""),
-        "mobile": req.form.get("mobile", ""),
-    },
+    profile=context.sql_user_provisioning.invitation_profile_from_request(req),
     REQUEST=req,
 )
 req.RESPONSE.setHeader("Content-Type", "text/html; charset=utf-8")
@@ -132,6 +127,7 @@ return """<!doctype html><html><head><meta name="viewport" content="width=device
     _script(invitations, "form", "Accept invitation", '''# SQLUSERWIZARD-MANAGED-INVITATION-FORM
 field = context.sql_user_provisioning.csrf_field(context.REQUEST)
 token = context.REQUEST.form.get("token", "")
+profile_fields = context.sql_user_provisioning.render_invitation_profile_fields(token, context.REQUEST)
 context.REQUEST.RESPONSE.setHeader("Content-Type", "text/html; charset=utf-8")
 return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Accept invitation</title><link rel="stylesheet" href="sql_wizard.css"></head>
@@ -143,13 +139,10 @@ return """<!doctype html><html><head><meta name="viewport" content="width=device
 <small>Choose a nickname, or simply use your email address. You will enter this when signing in.</small></label>
 <label class="form-field"><span>Password</span><input name="password" type="password" autocomplete="new-password" placeholder="At least 12 characters" title="Use at least 12 characters" minlength="12" required>
 <small>Use at least 12 characters.</small></label>
-<label class="form-field"><span>First name</span><input name="first_name" autocomplete="given-name" placeholder="Your first name"></label>
-<label class="form-field"><span>Last name</span><input name="last_name" autocomplete="family-name" placeholder="Your last name"></label>
-<label class="form-field"><span>Display name</span><input name="display_name" placeholder="The name other users should see" title="This may be your full name or another public display name"></label>
-<label class="form-field"><span>Mobile</span><input name="mobile" type="tel" autocomplete="tel" placeholder="Optional, including country code" title="Optional mobile number, preferably including country code"></label>
+%s
 <div class="sqluw-form-actions"><button type="submit">Complete invitation</button></div></form>
-</section></main></body></html>""" % (field, token)
-''', "SQLUSERWIZARD-MANAGED-INVITATION-FORM", ("Anonymous",))
+</section></main></body></html>""" % (field, token, profile_fields)
+''', "SQLUSERWIZARD-MANAGED-INVITATION-FORM", ("Anonymous",), (INSPECTOR_ROLE,))
     _script(invitations, "create_form", "Create invitation", '''# SQLUSERWIZARD-MANAGED-INVITATION-CREATE-FORM
 field = context.sql_user_provisioning.csrf_field(context.REQUEST)
 mailhosts = context.objectValues("Mail Host")

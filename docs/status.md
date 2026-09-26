@@ -1,5 +1,19 @@
 # Current verification status
 
+## 0.2.0b2 candidate checkpoint, 2026-09-26
+
+The 0.2.0b2 candidate passes 183 local tests. Built-in and configured profile
+fields now render in one Profile section in SQL User Admin, self-service profile
+editing, and invitation acceptance. Field edits and removals render their
+updated persistent state immediately. Invitation completion validates and saves
+configured values in the managed profile JSON within its existing explicit SQL
+transaction.
+
+The candidate source and repaired persistent invitation scripts are installed
+on the Plone 6.2.2 / Zope 6.2 chapter lab. The live admin profile renders one
+fieldset with all three configured address fields, and both generated public
+scripts compile with their narrow proxy roles. TestPyPI publication is pending.
+
 ## Invitation development checkpoint, 2026-09-26
 
 The 0.2.0b1 beta passes 176 local tests and is installed on the chapter 4

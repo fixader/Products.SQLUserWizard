@@ -12,6 +12,7 @@ import time
 from contextlib import contextmanager
 from collections import OrderedDict
 from email.message import EmailMessage
+from html import escape
 from threading import Lock
 
 import transaction
@@ -22,8 +23,14 @@ from zExceptions import Forbidden, Unauthorized
 from ZPublisher.interfaces import UseTraversalDefault
 
 from .compat import InitializeClass
-from .config import DEFAULT_MANIFEST_ID, DEFAULT_PAS_ID
+from .config import (
+    DEFAULT_ADMIN_ID,
+    DEFAULT_MANIFEST_ID,
+    DEFAULT_PAS_ID,
+    DEFAULT_PROFILE_DATA_SAVE_ID,
+)
 from .password import encode_password
+from .profile_fields import collect_values, dump_values, ordered, render_fields
 from .security import csrf_field, require_post
 from .sqladmin import first_row, save_sql_user
 
@@ -105,7 +112,8 @@ class SQLUserProvisioning(SimpleItem):
         if name in ("create_invitation", "inspect_invitation", "list_invitations",
                     "rotate_invitation_secret", "revoke_invitation",
                     "complete_invitation", "record_delivery", "log_delivery",
-                    "deliver_invitation_email"):
+                    "deliver_invitation_email", "render_invitation_profile_fields",
+                    "invitation_profile_from_request"):
             raise Forbidden("Use an authorized application script")
         # Let Zope apply its normal attribute traversal and publication checks
         # for inherited management views; only the API entry points are blocked.
@@ -131,6 +139,11 @@ class SQLUserProvisioning(SimpleItem):
         if feature.get("connection_id") != manifest["connection_id"]:
             raise ValueError("Invitation connection has changed")
         return pas._getOb(manifest["plugin_id"])
+
+    def _profile_definitions(self):
+        application = aq_parent(aq_inner(self))
+        admin = application._getOb(DEFAULT_ADMIN_ID, None)
+        return tuple(getattr(admin, "profile_fields", ()) or ()) if admin is not None else ()
 
     def _hash(self, token, request):
         # Throttle by caller address, not by attacker-selected token. Use the
@@ -226,6 +239,33 @@ class SQLUserProvisioning(SimpleItem):
             return dict(valid=False)
         return dict(valid=True, expires_at=int(row.expires_at),
                     proposed_login=row.proposed_login or "")
+
+    security.declareProtected(INSPECT, "render_invitation_profile_fields")
+    def render_invitation_profile_fields(self, token, REQUEST):
+        """Render the unified profile form for the holder of a valid token."""
+        self._check(INSPECT, REQUEST, mutate=False)
+        row = first_row(self._plugin().zsql_invitation_get_by_hash(
+            secret_hash=self._hash(token, REQUEST)))
+        if not self._pending(row) or row.claim_nonce:
+            raise ValueError("Invitation is invalid or unavailable")
+        fixed = f'''<label class="form-field"><span>First name</span><input name="first_name" autocomplete="given-name" placeholder="Your first name"></label>
+<label class="form-field"><span>Last name</span><input name="last_name" autocomplete="family-name" placeholder="Your last name"></label>
+<label class="form-field"><span>Display name</span><input name="display_name" placeholder="The name other users should see" title="This may be your full name or another public display name"></label>
+<label class="form-field"><span>Email</span><input name="email" type="email" value="{escape(str(row.email))}" readonly title="The email address that received this invitation"></label>
+<label class="form-field"><span>Mobile</span><input name="mobile" type="tel" autocomplete="tel" placeholder="Optional, including country code" title="Optional mobile number, preferably including country code"></label>'''
+        return '<fieldset><legend>Profile</legend>' + fixed + render_fields(
+            self._profile_definitions(), {}) + "</fieldset>"
+
+    security.declareProtected(COMPLETE, "invitation_profile_from_request")
+    def invitation_profile_from_request(self, REQUEST):
+        """Collect only configured profile values from an acceptance request."""
+        self._check(COMPLETE, REQUEST)
+        form = REQUEST.form
+        profile = {name: form.get(name, "") for name in (
+            "first_name", "last_name", "display_name", "mobile")}
+        for definition in ordered(self._profile_definitions(), active_only=True):
+            profile[definition["id"]] = form.get(definition["id"], "")
+        return profile
 
     security.declareProtected(ADMINISTER, "list_invitations")
     def list_invitations(self, REQUEST):
@@ -360,10 +400,14 @@ class SQLUserProvisioning(SimpleItem):
         login_name = text(login_name, "login", 80, True)
         if not isinstance(password, str) or not 12 <= len(password) <= 1024:
             raise ValueError("Password must contain 12-1024 characters")
-        if not isinstance(profile, dict) or set(profile) - {"first_name", "last_name", "display_name", "mobile"}:
+        definitions = self._profile_definitions()
+        builtin_names = {"first_name", "last_name", "display_name", "mobile"}
+        configured_names = {item["id"] for item in ordered(definitions, active_only=True)}
+        if not isinstance(profile, dict) or set(profile) - builtin_names - configured_names:
             raise ValueError("Unsupported profile fields")
         limits = {"first_name": 80, "last_name": 80, "display_name": 160, "mobile": 40}
-        profile = {k: text(v, k, limits[k]) for k, v in profile.items()}
+        builtin_profile = {k: text(profile.get(k, ""), k, limits[k]) for k in builtin_names}
+        extra_profile = collect_values(definitions, profile)
         plugin = self._plugin()
         row = first_row(plugin.zsql_invitation_get_by_hash(secret_hash=digest))
         if not self._pending(row) or row.claim_nonce:
@@ -388,7 +432,13 @@ class SQLUserProvisioning(SimpleItem):
                 plugin.zsql_invitation_insert_user(user_id=user_id, login_name=login_name,
                                                    password=stored, password_hash_id=hash_id, email=row.email)
                 save_sql_user(plugin, user_id, login_name, recovery_email=row.email, email=row.email,
-                              roles=roles, totp_required=self.totp_required, **profile)
+                              roles=roles, totp_required=self.totp_required, **builtin_profile)
+                if definitions:
+                    application = aq_parent(aq_inner(self))
+                    data_save = application._getOb(DEFAULT_PROFILE_DATA_SAVE_ID, None)
+                    if data_save is None:
+                        raise ValueError("Profile data storage is unavailable")
+                    data_save(user_id=user_id, profile_data=dump_values(extra_profile))
                 plugin.zsql_invitation_consume(invitation_id=row.invitation_id, claim_nonce=nonce,
                                                now=int(time.time()), user_id=user_id)
                 completed = first_row(plugin.zsql_invitation_get(invitation_id=row.invitation_id))

@@ -94,7 +94,7 @@ class SQLUserAdmin(SimpleItem):
                     ))
                     message = self._message("Profile field saved", "ok")
                 else:
-                    message = self._message("Profile field definition removed; stored values are retained until profiles are saved", "ok")
+                    message = self._message("Profile field removed from the profile forms. Existing user profiles were not rewritten.", "ok")
                 self.profile_fields = tuple(ordered(definitions))
             except Exception as exc:
                 message = self._message(str(exc), "error")
@@ -105,9 +105,10 @@ class SQLUserAdmin(SimpleItem):
     def _render_profile_field_editor(self, message, selected):
         rows = []
         for item in ordered(self.profile_fields):
+            field_id = escape(item["id"])
             rows.append(
                 "<tr>"
-                f"<td><a href='?field_id={escape(item['id'])}'>{escape(item['id'])}</a></td>"
+                f"<td><a href='?field_id={field_id}#profile-field-editor'>{field_id}</a></td>"
                 f"<td>{escape(item['label'])}</td><td>{escape(item['type'])}</td>"
                 f"<td>{'Required' if item.get('required') else 'Optional'}</td>"
                 f"<td>{'Active' if item.get('active', True) else 'Inactive'}</td>"
@@ -119,6 +120,7 @@ class SQLUserAdmin(SimpleItem):
             for kind in FIELD_TYPES
         )
         table = ("<p>No custom profile fields yet.</p>" if not rows else
+                 "<p class='muted'>Select a field ID to edit or remove that definition.</p>"
                  "<div class='table-scroll'><table><thead><tr><th>Field id</th><th>Label</th><th>Type</th><th>Requirement</th><th>Status</th><th>Order</th></tr></thead><tbody>"
                  + "".join(rows) + "</tbody></table></div>")
         checked_required = " checked" if selected.get("required") else ""
@@ -128,7 +130,8 @@ class SQLUserAdmin(SimpleItem):
 <main class="sqluw-editor-shell"><h1>Profile field editor</h1>
 <p class="muted">Add application-specific descriptive fields. Roles remain the authorization mechanism.</p>
 {message}<section class="panel"><h2>Configured fields</h2>{table}</section>
-<section class="panel"><h2>{'Edit field' if selected else 'Add field'}</h2>
+<section class="panel" id="profile-field-editor"><h2>{'Edit field' if selected else 'Add field'}</h2>
+{'<p class="muted">The field ID is permanent. Change the label or other settings below, then select Save field. Remove definition takes effect immediately.</p>' if selected else '<p class="muted">Create a stable field ID. You can edit its label and settings after saving.</p>'}
 <form method="post">
 <label class="form-field"><span>Field id</span><input name="field_id" value="{escape(selected.get('id', ''))}"{' readonly' if selected else ''} required></label>
 <label class="form-field"><span>Label</span><input name="label" value="{escape(selected.get('label', ''))}" required></label>
@@ -710,6 +713,10 @@ SMTP and ready-made invitation pages are optional application concerns.</p>
 
     def _render_profile_fields(self, user, REQUEST=None):
         editor_link = '<p class="profile-editor-link"><a href="manage_profile_fields">Edit profile fields</a></p>'
+        custom_controls = render_fields(
+            self.profile_fields,
+            self._profile_extra_values(self._raw_value(user, "user_id")),
+        )
         template = getattr(self.aq_parent, DEFAULT_PROFILE_FORM_ID, None)
         if template is not None:
             data = self._profile_template_data(user)
@@ -717,9 +724,20 @@ SMTP and ready-made invitation pages are optional application concerns.</p>
                 rendered = template(client=self, REQUEST=REQUEST or {}, **data)
             except TypeError:
                 rendered = template(self, REQUEST or {}, **data)
-            return editor_link + rendered + render_fields(self.profile_fields, self._profile_extra_values(self._raw_value(user, "user_id")))
+            return editor_link + self._merge_profile_controls(rendered, custom_controls)
 
-        return editor_link + self._render_builtin_profile_fields(user) + render_fields(self.profile_fields, self._profile_extra_values(self._raw_value(user, "user_id")))
+        return editor_link + self._render_builtin_profile_fields(user, custom_controls)
+
+    @staticmethod
+    def _merge_profile_controls(rendered, custom_controls):
+        """Place configured controls inside the existing Profile fieldset."""
+        if not custom_controls:
+            return rendered
+        marker = "</fieldset>"
+        position = rendered.rfind(marker)
+        if position < 0:
+            return f"<fieldset><legend>Profile</legend>{rendered}{custom_controls}</fieldset>"
+        return rendered[:position] + custom_controls + rendered[position:]
 
     def _profile_extra_values(self, user_id):
         if not user_id:
@@ -778,7 +796,7 @@ SMTP and ready-made invitation pages are optional application concerns.</p>
         {uri_html}
       </fieldset>"""
 
-    def _render_builtin_profile_fields(self, user):
+    def _render_builtin_profile_fields(self, user, custom_controls=""):
         value = self._value
         return f"""
   <fieldset>
@@ -798,6 +816,7 @@ SMTP and ready-made invitation pages are optional application concerns.</p>
     <label class="form-field">Mobile
       <input name="mobile" value="{value(user, 'mobile')}">
     </label>
+    {custom_controls}
   </fieldset>"""
 
     def _render_profile_page(self, user, message, REQUEST=None):

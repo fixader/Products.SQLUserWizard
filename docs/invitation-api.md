@@ -1,7 +1,8 @@
 # Invitation API
 
 The core API was introduced in `0.2.0a2`. Version `0.2.0b1` adds the generated
-forms and optional MailHost-backed delivery described below.
+forms and optional MailHost-backed delivery described below. Version `0.2.0b2`
+also renders and saves configured profile fields during invitation acceptance.
 
 ## Explicit setup
 

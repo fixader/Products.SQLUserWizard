@@ -4,6 +4,18 @@ All notable changes to Products.SQLUserWizard are tracked here. The project is
 still pre-release, so entries include lab verification notes when they affect
 install confidence.
 
+## 0.2.0b2 - 2026-09-26
+
+- Unified built-in and configured fields in one **Profile** section in SQL User
+  Admin, self-service profile editing, and invitation acceptance.
+- Fixed profile-field edits and removals so the submitted result is immediately
+  rendered from current persistent state rather than a stale redirected view.
+- Added configured profile fields to the generated invitation form and stores
+  their validated values in the managed profile JSON during the same explicit
+  completion transaction.
+- Added focused regression coverage for field editing/removal, unified form
+  rendering, generated proxy roles, and invitation profile persistence.
+
 ## 0.2.0b1 - 2026-09-26
 
 - Added a Manager-only profile field editor with validated text, email, phone,

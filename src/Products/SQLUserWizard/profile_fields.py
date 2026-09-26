@@ -123,4 +123,4 @@ def render_fields(definitions, values=None):
         parts.append(f'<label class="form-field"><span>{label}</span>{control}</label>')
     if not parts:
         return ""
-    return '<fieldset class="profile-extra-fields"><legend>Additional profile information</legend>' + "".join(parts) + "</fieldset>"
+    return "".join(parts)
