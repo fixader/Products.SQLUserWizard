@@ -54,6 +54,9 @@ def test_permission_csrf_and_direct_traversal(provisioning):
         provisioning.create_invitation("user@example.invalid", [], request())
     with pytest.raises(Forbidden):
         provisioning.__bobo_traverse__(request(), "complete_invitation")
+    from ZPublisher.interfaces import UseTraversalDefault
+    with pytest.raises(UseTraversalDefault):
+        provisioning.__bobo_traverse__(request(), "manage_role")
     noSecurityManager()
     with pytest.raises(Unauthorized):
         provisioning.list_invitations(request())

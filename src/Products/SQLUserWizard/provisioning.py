@@ -15,6 +15,7 @@ from AccessControl import ClassSecurityInfo, getSecurityManager
 from Acquisition import aq_base, aq_parent, aq_inner
 from OFS.SimpleItem import SimpleItem
 from zExceptions import Forbidden, Unauthorized
+from ZPublisher.interfaces import UseTraversalDefault
 
 from .compat import InitializeClass
 from .config import DEFAULT_MANIFEST_ID, DEFAULT_PAS_ID
@@ -95,7 +96,9 @@ class SQLUserProvisioning(SimpleItem):
                     "rotate_invitation_secret", "revoke_invitation",
                     "complete_invitation", "record_delivery"):
             raise Forbidden("Use an authorized application script")
-        return getattr(self, name)
+        # Let Zope apply its normal attribute traversal and publication checks
+        # for inherited management views; only the API entry points are blocked.
+        raise UseTraversalDefault
 
     def _check(self, permission, request, mutate=True):
         if not getSecurityManager().checkPermission(permission, self):
