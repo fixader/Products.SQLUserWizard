@@ -13,6 +13,12 @@ def test_storage_is_explicit_and_repair_preserves_ownership(installed):
     db = installed.test_db._v_db
     assert not db.execute("select name from sqlite_master where name like 'pas_invitation%'").fetchall()
     enable_invitation_storage(installed)
+    invitations = installed.invitations
+    assert set(("create_invitation", "inspect_invitation", "complete_invitation", "form",
+                "create_form", "sql_wizard.css", "README-invitations.html")) <= set(invitations.objectIds())
+    assert invitations.create_invitation._proxy_roles == ()
+    assert invitations.inspect_invitation._proxy_roles == ("InvitationInspector",)
+    assert invitations.complete_invitation._proxy_roles == ("InvitationCompleter",)
     db.execute("insert into pas_invitations (invitation_id, secret_hash, email, creator_id, created_at, expires_at) values ('i','h','u@example.invalid','m',1,100)")
     before = list(db.iterdump())
     enable_invitation_storage(installed)

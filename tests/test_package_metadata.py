@@ -12,7 +12,7 @@ def test_pyproject_metadata_marks_alpha_mit_and_zope5_compatible():
     data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     project = data["project"]
 
-    assert project["version"] == "0.2.0a2"
+    assert project["version"] == "0.2.0a3"
     assert project["requires-python"] == ">=3.8"
     assert project["license"]["text"] == "MIT"
     assert "Development Status :: 3 - Alpha" in project["classifiers"]
@@ -30,7 +30,7 @@ def test_pyproject_metadata_marks_alpha_mit_and_zope5_compatible():
 def test_setup_py_keeps_legacy_buildout_metadata_in_sync():
     text = (ROOT / "setup.py").read_text(encoding="utf-8")
 
-    assert 'version="0.2.0a2"' in text
+    assert 'version="0.2.0a3"' in text
     assert 'license="MIT"' in text
     assert 'python_requires=">=3.8"' in text
     assert '"Zope>=5.0"' in text

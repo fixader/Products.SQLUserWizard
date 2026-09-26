@@ -11,6 +11,8 @@ DEFAULT_PROFILE_FORM_ID = "sql_user_profile_form"
 DEFAULT_PROFILE_PREVIEW_ID = "sql_user_profile_preview"
 DEFAULT_PROFILE_GET_ID = "sql_user_profile_get"
 DEFAULT_PROFILE_SAVE_ID = "sql_user_profile_save"
+DEFAULT_PROFILE_DATA_GET_ID = "sql_user_profile_data_get"
+DEFAULT_PROFILE_DATA_SAVE_ID = "sql_user_profile_data_save"
 DEFAULT_LOGIN_FORM_ID = "sql_user_login_form"
 DEFAULT_LOGIN_SUBMIT_ID = "sql_user_login_submit"
 DEFAULT_LOGOUT_ID = "sql_user_logout"
@@ -99,6 +101,12 @@ create unique index if not exists {users}_username_idx on {users}(username)""",
     created_at timestamp not null default current_timestamp,
     updated_at timestamp not null default current_timestamp
 )""",
+        },
+        "setup_profile_data_column": {
+            "id": "zsql_pas_setup_profile_data_column",
+            "title": "Add extensible profile data column",
+            "arguments": "",
+            "template": f"alter table {profiles} add column if not exists profile_data text",
         },
         "setup_roles": {
             "id": "zsql_pas_setup_roles",
@@ -376,6 +384,24 @@ on conflict (user_id) do update set
     email = excluded.email,
     mobile = excluded.mobile,
     updated_at = current_timestamp""",
+        },
+        "get_profile_data": {
+            "id": DEFAULT_PROFILE_DATA_GET_ID,
+            "title": "Fetch extensible SQL user profile data",
+            "arguments": "user_id",
+            "template": f"""select profile_data
+from {profiles}
+where user_id = <dtml-sqlvar user_id type=string>
+limit 1""",
+        },
+        "save_profile_data": {
+            "id": DEFAULT_PROFILE_DATA_SAVE_ID,
+            "title": "Save extensible SQL user profile data",
+            "arguments": "user_id profile_data",
+            "template": f"""update {profiles}
+set profile_data = <dtml-sqlvar profile_data type=string>,
+    updated_at = current_timestamp
+where user_id = <dtml-sqlvar user_id type=string>""",
         },
     }
 

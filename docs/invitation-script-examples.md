@@ -5,9 +5,10 @@ or mail server is required. They are a starting point for a controlled manual
 test, not a complete enrollment user interface.
 
 First enable invitation storage from **SQL User Admin > Invitations**, allowing
-the ordinary `Member` role. Create an `invitations` child folder in the application.
-Install the following bodies as Zope **Script (Python)** objects with an empty
-parameter list. Inputs come from `context.REQUEST.form`.
+the ordinary `Member` role. SQLUserWizard now creates the `invitations` child
+folder, scripts, forms, permissions, proxy roles, local stylesheet, and Manager
+notes automatically. The bodies below document the generated wrappers and are
+a starting point when an application deliberately takes ownership of one.
 
 ## Create an invitation
 
@@ -94,5 +95,5 @@ catching such a failure. Finish creation/completion requests without further SQL
 Explicit transaction boundaries are documented in the
 [API reference](invitation-api.md#transaction-boundary-and-remaining-verification).
 
-The future optional product will provide complete pages, permission setup and
-delivery orchestration using these same controller methods.
+The generated example provides minimal pages and permission setup. Mail
+delivery remains application-owned and uses these same controller methods.

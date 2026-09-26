@@ -2,6 +2,11 @@
 
 ## Invitation development checkpoint, 2026-09-26
 
+The 0.2.0a3 candidate passes 174 local tests and is installed on the chapter 4
+lab. Live checks cover the profile-field editor and SQL JSON storage, generated
+invitation objects and permissions, shared CSS, ZMI traversal, and anonymous
+login navigation. TestPyPI publication is pending.
+
 Release `v0.2.0a2` contains the verified invitation implementation and is
 published on TestPyPI.
 169 local tests pass, including executable Script (Python) examples, optional

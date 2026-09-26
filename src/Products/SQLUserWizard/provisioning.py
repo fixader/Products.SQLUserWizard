@@ -78,10 +78,12 @@ class SQLUserProvisioning(SimpleItem):
     """Methods are callable by authorized scripts, not HTTP traversal."""
 
     meta_type = "SQL User Provisioning"
+    zmi_icon = "fas fa-user-plus"
     security = ClassSecurityInfo()
     security.declareObjectPublic()
     security.setDefaultAccess(False)
     security.declarePublic("meta_type")
+    security.declarePublic("zmi_icon")
     security.setPermissionDefault(ADMINISTER, ("Manager",))
     security.setPermissionDefault(COMPLETE, ("Manager",))
     security.setPermissionDefault(INSPECT, ("Manager",))

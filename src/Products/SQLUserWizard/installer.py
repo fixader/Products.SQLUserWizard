@@ -118,6 +118,7 @@ class SQLUserWizardInstaller:
             self.result.action("Skipped standard Zope role seed")
         self._ensure_initial_sql_user(plugin)
         self._ensure_admin_tool()
+        self._ensure_stylesheet()
         self._ensure_profile_zsql_methods()
         self._ensure_profile_template()
         self._ensure_profile_preview_template()
@@ -224,7 +225,9 @@ class SQLUserWizardInstaller:
             )
             self.result.action(f"Created Z SQL Method {spec['id']}")
             method = getattr(container, spec["id"])
-            method.manage_permission("Use Database Methods", roles=(), acquire=0)
+            method.manage_permission(
+                "Use Database Methods", roles=("Manager",), acquire=0
+            )
             return
 
         method.manage_edit(
@@ -233,7 +236,9 @@ class SQLUserWizardInstaller:
             arguments=spec["arguments"],
             template=spec["template"],
         )
-        method.manage_permission("Use Database Methods", roles=(), acquire=0)
+        method.manage_permission(
+            "Use Database Methods", roles=("Manager",), acquire=0
+        )
         self.result.action(f"Updated Z SQL Method {spec['id']}")
 
     def _ensure_database_schema(self, plugin):
@@ -241,13 +246,14 @@ class SQLUserWizardInstaller:
             "zsql_pas_setup_users",
             "zsql_pas_setup_user_security_columns",
             "zsql_pas_setup_profiles",
+            "zsql_pas_setup_profile_data_column",
             "zsql_pas_setup_roles",
             "zsql_pas_setup_user_roles",
         ):
             try:
                 getattr(plugin, method_id)()
             except Exception as exc:
-                if method_id == "zsql_pas_setup_user_security_columns":
+                if method_id in ("zsql_pas_setup_user_security_columns", "zsql_pas_setup_profile_data_column"):
                     self.result.warning(
                         f"Could not repair security columns automatically: {exc}"
                     )
@@ -772,6 +778,26 @@ class SQLUserWizardInstaller:
         self.result.action(f"Configured TOTP issuer {self.totp_issuer}")
         return getattr(self.folder, self.admin_id)
 
+    def _ensure_stylesheet(self):
+        from OFS.Image import File
+        from .styles import STYLESHEET, STYLESHEET_ID
+
+        encoded = STYLESHEET.encode("utf-8")
+        existing = self._local_object(self.folder, STYLESHEET_ID)
+        if existing is None:
+            self.folder._setObject(
+                STYLESHEET_ID,
+                File(STYLESHEET_ID, "SQLUserWizard stylesheet", encoded, content_type="text/css"),
+            )
+            existing = self._local_object(self.folder, STYLESHEET_ID)
+            self.result.action(f"Created static stylesheet {STYLESHEET_ID}")
+        elif getattr(existing, "title", "") == "SQLUserWizard stylesheet":
+            existing.update_data(encoded, content_type="text/css", size=len(encoded))
+            self.result.action(f"Updated static stylesheet {STYLESHEET_ID}")
+        else:
+            self.result.warning(f"{STYLESHEET_ID} looks customized; not overwritten")
+        existing.manage_permission("View", roles=("Anonymous",), acquire=0)
+
     def _ensure_profile_template(self):
         return self._ensure_managed_dtml_method(
             object_id=DEFAULT_PROFILE_FORM_ID,
@@ -903,7 +929,9 @@ class SQLUserWizardInstaller:
         for spec in profile_templates(self.dialect, self.tables).values():
             existing = self._local_object(self.folder, spec["id"])
             if existing is not None:
-                existing.manage_permission("Use Database Methods", roles=(), acquire=0)
+                existing.manage_permission(
+                    "Use Database Methods", roles=("Manager",), acquire=0
+                )
                 self.result.action(f"Using existing editable Z SQL Method {spec['id']}")
                 continue
             self._upsert_zsql_method(self.folder, spec)
@@ -921,24 +949,22 @@ first_name, last_name, display_name, email, mobile.
 Managers can change labels, layout, help text, and remove fields here. Adding
 new saved fields such as avatar requires adding storage and save handling too.
 </dtml-comment>
-<fieldset>
+<fieldset class="profile-fields">
   <legend>Profile</legend>
-  <div class="split">
-    <label>First name
-      <input name="first_name" value="<dtml-var first_name html_quote>">
-    </label>
-    <label>Last name
-      <input name="last_name" value="<dtml-var last_name html_quote>">
-    </label>
-  </div>
-  <label>Display name
-    <input name="display_name" value="<dtml-var display_name html_quote>">
+  <label class="form-field"><span>First name</span>
+    <input name="first_name" value="<dtml-var first_name missing='' html_quote>">
   </label>
-  <label>Email
-    <input name="email" value="<dtml-var email html_quote>">
+  <label class="form-field"><span>Last name</span>
+    <input name="last_name" value="<dtml-var last_name missing='' html_quote>">
   </label>
-  <label>Mobile
-    <input name="mobile" value="<dtml-var mobile html_quote>">
+  <label class="form-field"><span>Display name</span>
+    <input name="display_name" value="<dtml-var display_name missing='' html_quote>">
+  </label>
+  <label class="form-field"><span>Email</span>
+    <input name="email" type="email" value="<dtml-var email missing='' html_quote>">
+  </label>
+  <label class="form-field"><span>Mobile</span>
+    <input name="mobile" type="tel" value="<dtml-var mobile missing='' html_quote>">
   </label>
 </fieldset>
 """
@@ -948,6 +974,7 @@ new saved fields such as avatar requires adding storage and save handling too.
 <head>
   <dtml-comment>SQLUSERWIZARD-MANAGED-PROFILE-PREVIEW</dtml-comment>
   <title>SQL User Profile Form Preview</title>
+  <link rel="stylesheet" href="sql_wizard.css">
   <style>
     body {{ font-family: system-ui, sans-serif; margin: 1.5rem; max-width: 760px; }}
     .note {{ color: #555; background: #f6f7f9; border-left: 4px solid #9aa6b2; padding: .75rem 1rem; }}
@@ -956,7 +983,7 @@ new saved fields such as avatar requires adding storage and save handling too.
     fieldset {{ border: 1px solid #c8ced8; margin: 1rem 0; padding: 1rem; }}
   </style>
 </head>
-<body>
+<body class="sqluw-page">
   <h1>Profile Form Preview</h1>
   <p class="note"><code>{DEFAULT_PROFILE_FORM_ID}</code> is a partial profile
   form, not a complete page. Keep it as fields only, so it can be embedded by
@@ -1059,10 +1086,12 @@ which validates password and optional TOTP before PAS receives credentials.
           <input type="hidden" name="came_from" value="<dtml-var came_from html_quote>">
           <button type="submit">Log in</button>
         </form>
-        <nav>
-          {profile_link}
-          <a href="{DEFAULT_LOGOUT_ID}">Log out</a>
-        </nav>
+        <dtml-if expr="REQUEST.get('AUTHENTICATED_USER') and REQUEST.get('AUTHENTICATED_USER').getUserName() != 'Anonymous User'">
+          <nav>
+            {profile_link}
+            <a href="{DEFAULT_LOGOUT_ID}">Log out</a>
+          </nav>
+        </dtml-if>
         <p class="muted">ZODB fallback accounts can also use Basic Auth for ZMI recovery.</p>
       </div>
     </section>
@@ -1149,7 +1178,7 @@ which validates password and optional TOTP before PAS receives credentials.
 
         manifest = {
             "product": "Products.SQLUserWizard",
-            "version": "0.2.0a2",
+            "version": "0.2.0a3",
             "runtime_revision": 2,
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "mode": self.mode,

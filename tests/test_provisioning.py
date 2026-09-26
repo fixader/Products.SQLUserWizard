@@ -65,7 +65,8 @@ def test_permission_csrf_and_direct_traversal(provisioning):
 def test_zmi_permission_edit_renders_and_preserves_role_mapping(provisioning):
     from AccessControl.PermissionRole import rolesForPermissionOn
     from Products.SQLUserWizard.provisioning import INSPECT
-    provisioning.aq_parent._addRole("InvitationInspector")
+    if "InvitationInspector" not in provisioning.aq_parent.valid_roles():
+        provisioning.aq_parent._addRole("InvitationInspector")
     provisioning.manage_role("InvitationInspector", permissions=[INSPECT], REQUEST=request())
     assert "InvitationInspector" in rolesForPermissionOn(INSPECT, provisioning)
 
@@ -201,10 +202,12 @@ def application_script(folder, name, body, roles=()):
 def test_real_restricted_script_requires_narrow_proxy_role(provisioning):
     from Products.SQLUserWizard.provisioning import INSPECT
     folder = provisioning.aq_parent
-    folder._addRole("InvitationInspector")
+    if "InvitationInspector" not in folder.valid_roles():
+        folder._addRole("InvitationInspector")
     provisioning.manage_permission(INSPECT, roles=("Manager", "InvitationInspector"), acquire=0)
     invitation = create(provisioning)
-    folder.manage_addFolder("invitations")
+    if "invitations" not in folder.objectIds():
+        folder.manage_addFolder("invitations")
     script = application_script(folder.invitations, "inspect",
         "return context.sql_user_provisioning.inspect_invitation(token, req)")
     noSecurityManager()
@@ -236,10 +239,12 @@ def test_real_completion_script_uses_proxy_without_manager(transactional):
     from Products.SQLUserWizard.provisioning import COMPLETE
     controller, resource = transactional
     folder = controller.aq_parent
-    folder._addRole("InvitationCompleter")
+    if "InvitationCompleter" not in folder.valid_roles():
+        folder._addRole("InvitationCompleter")
     controller.manage_permission(COMPLETE, roles=("Manager", "InvitationCompleter"), acquire=0)
     invitation = create(controller)
-    folder.manage_addFolder("invitations")
+    if "invitations" not in folder.objectIds():
+        folder.manage_addFolder("invitations")
     script = application_script(folder.invitations, "complete",
         'return context.sql_user_provisioning.complete_invitation(token, "new", "new", "long-password", {}, req)',
         ("InvitationCompleter",))
@@ -269,8 +274,10 @@ def test_documented_script_bodies_create_inspect_and_complete(transactional):
     source = (Path(__file__).parents[1] / "docs/invitation-script-examples.md").read_text()
     bodies = re.findall(r"```python\n(.*?)\n```", source, re.S)[:3]
     assert len(bodies) == 3
-    folder._addRole("InvitationInspector")
-    folder._addRole("InvitationCompleter")
+    if "InvitationInspector" not in folder.valid_roles():
+        folder._addRole("InvitationInspector")
+    if "InvitationCompleter" not in folder.valid_roles():
+        folder._addRole("InvitationCompleter")
     controller.manage_permission(INSPECT, roles=("Manager", "InvitationInspector"), acquire=0)
     controller.manage_permission(COMPLETE, roles=("Manager", "InvitationCompleter"), acquire=0)
     scripts = []

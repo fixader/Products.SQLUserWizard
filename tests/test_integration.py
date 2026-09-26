@@ -201,6 +201,15 @@ def test_anonymous_pas_auth_and_sql_methods_not_public(installed):
     assert not getSecurityManager().checkPermission("View", pas.sql_user_wizard_manifest)
 
 
+def test_manager_can_manage_generated_zsql_methods(installed):
+    for container in (installed.acl_users.sql_auth, installed):
+        for obj in container.objectValues():
+            if obj.meta_type == "Z SQL Method":
+                assert getSecurityManager().checkPermission(
+                    "Use Database Methods", obj
+                )
+
+
 def test_profile_and_2fa_require_post_and_csrf(installed):
     from zExceptions import Forbidden, Unauthorized
     add_user(installed, required=True, enabled=True)

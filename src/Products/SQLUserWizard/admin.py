@@ -20,10 +20,19 @@ from .config import (
     DEFAULT_PROFILE_FORM_ID,
     DEFAULT_PROFILE_GET_ID,
     DEFAULT_PROFILE_SAVE_ID,
+    DEFAULT_PROFILE_DATA_GET_ID,
+    DEFAULT_PROFILE_DATA_SAVE_ID,
     DEFAULT_LOGOUT_ID,
     DEFAULT_COOKIE_AUTH_ID,
     DEFAULT_LOGIN_SUBMIT_ID,
 )
+from .profile_fields import FIELD_TYPES
+from .profile_fields import collect_values
+from .profile_fields import dump_values
+from .profile_fields import load_values
+from .profile_fields import normalize_definition
+from .profile_fields import ordered
+from .profile_fields import render_fields
 from .sqladmin import (
     delete_sql_user,
     first_row,
@@ -48,15 +57,92 @@ class SQLUserAdmin(SimpleItem):
     pas_id = DEFAULT_PAS_ID
     plugin_id = DEFAULT_PLUGIN_ID
     totp_issuer = DEFAULT_TOTP_ISSUER
+    profile_fields = ()
 
     def __init__(self, id=DEFAULT_ADMIN_ID):
         self.id = id
 
     manage_options = (
         {"label": "Users", "action": "manage_main"},
+        {"label": "Profile fields", "action": "manage_profile_fields"},
         {"label": "Invitations", "action": "manage_invitations"},
         {"label": "Security", "action": "manage_access"},
     )
+
+    security.declareProtected(manage_users, "manage_profile_fields")
+
+    def manage_profile_fields(self, REQUEST=None):
+        """Configure validated application-specific profile fields."""
+        if REQUEST is not None:
+            REQUEST.RESPONSE.setHeader("Content-Type", "text/html; charset=utf-8")
+        message = ""
+        if REQUEST is not None and (REQUEST.form.get("save_field") or REQUEST.form.get("delete_field")):
+            require_post(self, REQUEST)
+            try:
+                field_id = str(REQUEST.form.get("field_id", "")).strip().lower()
+                definitions = [dict(item) for item in self.profile_fields if item.get("id") != field_id]
+                if REQUEST.form.get("save_field"):
+                    definitions.append(normalize_definition(
+                        field_id=field_id,
+                        label=REQUEST.form.get("label", ""),
+                        field_type=REQUEST.form.get("field_type", "text"),
+                        required=bool(REQUEST.form.get("required")),
+                        active=bool(REQUEST.form.get("active")),
+                        sort_order=REQUEST.form.get("sort_order", 100),
+                        options=REQUEST.form.get("options", ""),
+                        default=REQUEST.form.get("default", ""),
+                    ))
+                    message = self._message("Profile field saved", "ok")
+                else:
+                    message = self._message("Profile field definition removed; stored values are retained until profiles are saved", "ok")
+                self.profile_fields = tuple(ordered(definitions))
+            except Exception as exc:
+                message = self._message(str(exc), "error")
+        selected_id = "" if REQUEST is None else str(REQUEST.get("field_id", ""))
+        selected = next((item for item in self.profile_fields if item.get("id") == selected_id), {})
+        return protect_forms(self, REQUEST, self._render_profile_field_editor(message, selected))
+
+    def _render_profile_field_editor(self, message, selected):
+        rows = []
+        for item in ordered(self.profile_fields):
+            rows.append(
+                "<tr>"
+                f"<td><a href='?field_id={escape(item['id'])}'>{escape(item['id'])}</a></td>"
+                f"<td>{escape(item['label'])}</td><td>{escape(item['type'])}</td>"
+                f"<td>{'Required' if item.get('required') else 'Optional'}</td>"
+                f"<td>{'Active' if item.get('active', True) else 'Inactive'}</td>"
+                f"<td>{int(item.get('sort_order', 100))}</td></tr>"
+            )
+        options_text = "\n".join("|".join(pair) for pair in selected.get("options", ()))
+        type_options = "".join(
+            f'<option value="{kind}"{" selected" if selected.get("type", "text") == kind else ""}>{kind}</option>'
+            for kind in FIELD_TYPES
+        )
+        table = ("<p>No custom profile fields yet.</p>" if not rows else
+                 "<div class='table-scroll'><table><thead><tr><th>Field id</th><th>Label</th><th>Type</th><th>Requirement</th><th>Status</th><th>Order</th></tr></thead><tbody>"
+                 + "".join(rows) + "</tbody></table></div>")
+        checked_required = " checked" if selected.get("required") else ""
+        checked_active = " checked" if selected.get("active", True) else ""
+        return f"""<!doctype html><html><head><title>Profile field editor</title>
+<link rel="stylesheet" href="../sql_wizard.css"></head><body class="sqluw-page">
+<main class="sqluw-editor-shell"><h1>Profile field editor</h1>
+<p class="muted">Add application-specific descriptive fields. Roles remain the authorization mechanism.</p>
+{message}<section class="panel"><h2>Configured fields</h2>{table}</section>
+<section class="panel"><h2>{'Edit field' if selected else 'Add field'}</h2>
+<form method="post">
+<label class="form-field"><span>Field id</span><input name="field_id" value="{escape(selected.get('id', ''))}"{' readonly' if selected else ''} required></label>
+<label class="form-field"><span>Label</span><input name="label" value="{escape(selected.get('label', ''))}" required></label>
+<label class="form-field"><span>Type</span><select name="field_type">{type_options}</select></label>
+<label class="form-field"><span>Default value</span><input name="default" value="{escape(selected.get('default', ''))}"></label>
+<label class="form-field"><span>Sort order</span><input name="sort_order" type="number" value="{int(selected.get('sort_order', 100))}"></label>
+<label class="form-field"><span>Select options</span><textarea name="options" rows="6" placeholder="value|Visible label">{escape(options_text)}</textarea></label>
+<label class="check-row"><input name="required" type="checkbox" value="1"{checked_required}><span>Required</span></label>
+<label class="check-row"><input name="active" type="checkbox" value="1"{checked_active}><span>Active</span></label>
+<div class="form-actions"><button name="save_field" value="1">Save field</button>
+{'<button class="danger" name="delete_field" value="1">Remove definition</button>' if selected else ''}
+<a class="button" href="manage_profile_fields">New field</a></div></form></section>
+<section class="panel"><h2>Address example</h2><p>Add fields such as <code>address_line_1</code>, <code>address_line_2</code>, <code>postal_code</code>, <code>city</code>, <code>region</code> and a country select. A <code>user_type</code> select is descriptive; use roles for access.</p></section>
+</main></body></html>"""
 
     security.declareProtected(manage_users, "manage_invitations")
 
@@ -309,9 +395,13 @@ SMTP and ready-made invitation pages are optional application concerns.</p>
         save_method = getattr(self.aq_parent, DEFAULT_PROFILE_SAVE_ID, None)
         if save_method is not None:
             save_method(**values)
-            return
-
-        save_sql_profile(self._plugin(), **values)
+        else:
+            save_sql_profile(self._plugin(), **values)
+        existing = self._profile_extra_values(user_id)
+        extra = collect_values(self.profile_fields, REQUEST, existing)
+        data_save = getattr(self.aq_parent, DEFAULT_PROFILE_DATA_SAVE_ID, None)
+        if data_save is not None:
+            data_save(user_id=user_id, profile_data=dump_values(extra))
 
     def _delete_from_request(self, REQUEST):
         user_id = REQUEST.get("edit_user_id") or REQUEST.get("user_id", "")
@@ -344,40 +434,62 @@ SMTP and ready-made invitation pages are optional application concerns.</p>
 <head>
   <title>SQL User Admin</title>
   <style>
-    body {{ font-family: system-ui, sans-serif; margin: 1.5rem; color: #172033; }}
+    * {{ box-sizing: border-box; }}
+    body {{ font-family: system-ui, sans-serif; max-width: 1540px; margin: 0 auto; padding: 2rem clamp(1rem, 3vw, 2.5rem); color: #172033; background: #f6f8fb; line-height: 1.45; }}
     a {{ color: #1d5f9f; text-decoration: none; }}
     a:hover {{ text-decoration: underline; }}
-    table {{ border-collapse: collapse; width: 100%; margin-top: 1rem; }}
-    th, td {{ border-bottom: 1px solid #d6dbe3; padding: .45rem; text-align: left; vertical-align: top; }}
-    th {{ background: #f5f7fa; font-size: .9rem; }}
-    label {{ display: block; margin: .65rem 0; font-weight: 600; }}
-    input {{ box-sizing: border-box; width: min(36rem, 100%); padding: .4rem; }}
-    button, .button {{ padding: .45rem .8rem; }}
-    fieldset {{ border: 1px solid #c8ced8; margin: 1rem 0; padding: 1rem; }}
-    legend {{ font-weight: 700; }}
-    .top-layout {{ display: grid; grid-template-columns: minmax(28rem, 1fr) minmax(22rem, .75fr); gap: 1.5rem; align-items: start; }}
-    .panel {{ border: 1px solid #c8ced8; padding: 1rem; background: #fff; }}
-    .ok {{ border-left: 4px solid #17803a; padding: .6rem; background: #eef8f0; }}
-    .error {{ border-left: 4px solid #b42318; padding: .6rem; background: #fff1f0; }}
-    .muted {{ color: #667085; }}
-    .status {{ display: inline-block; min-width: 4.8rem; padding: .15rem .45rem; border-radius: .25rem; text-align: center; font-size: .85rem; font-weight: 600; }}
+    h1, h2, h3 {{ line-height: 1.2; }}
+    h2 {{ margin: 0 0 1rem; font-size: 1.2rem; }}
+    h3 {{ margin: 0 0 .85rem; font-size: 1rem; }}
+    table {{ border-collapse: collapse; width: 100%; margin-top: .5rem; }}
+    .table-scroll {{ max-width: 100%; overflow: auto; border: 1px solid #e1e5eb; border-radius: .35rem; }}
+    .table-scroll table {{ margin-top: 0; }}
+    .users-scroll {{ max-height: 24rem; }}
+    .users-scroll thead {{ position: sticky; top: 0; z-index: 1; }}
+    th, td {{ border-bottom: 1px solid #d6dbe3; padding: .55rem .6rem; text-align: left; vertical-align: top; }}
+    th {{ background: #f1f4f8; font-size: .84rem; }}
+    label {{ font-weight: 600; }}
+    input {{ width: 100%; min-width: 0; padding: .5rem .6rem; border: 1px solid #aeb8c6; border-radius: .3rem; background: #fff; color: #172033; }}
+    input:focus {{ border-color: #3979b7; outline: 2px solid #cfe3f6; outline-offset: 1px; }}
+    button, .button {{ padding: .55rem .9rem; border: 1px solid #8f9baa; border-radius: .35rem; background: #fff; color: #172033; cursor: pointer; font-weight: 600; }}
+    button:hover, .button:hover {{ background: #f1f4f8; text-decoration: none; }}
+    fieldset {{ min-width: 0; border: 1px solid #c8ced8; border-radius: .45rem; margin: 0; padding: 1rem; background: #fff; }}
+    legend {{ padding: 0 .35rem; font-weight: 700; }}
+    .top-layout {{ display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(22rem, .85fr); gap: 1.25rem; align-items: start; margin-bottom: 1.25rem; }}
+    .panel {{ min-width: 0; border: 1px solid #c8ced8; border-radius: .5rem; padding: 1.1rem; background: #fff; box-shadow: 0 1px 2px rgba(23, 32, 51, .06); }}
+    .ok {{ border-left: 4px solid #17803a; padding: .7rem; background: #eef8f0; }}
+    .error {{ border-left: 4px solid #b42318; padding: .7rem; background: #fff1f0; }}
+    .muted {{ color: #667085; font-weight: 400; }}
+    .status {{ display: inline-block; min-width: 4.8rem; padding: .15rem .45rem; border-radius: .25rem; text-align: center; font-size: .82rem; font-weight: 600; }}
     .status-active {{ color: #075e2b; background: #dff6e7; }}
     .status-inactive {{ color: #7a271a; background: #fde6df; }}
-    .danger {{ color: #8a1f11; }}
-    .form-actions {{ display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; margin-top: .8rem; }}
-    .role-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .4rem .8rem; }}
-    .role-choice {{ display: flex; align-items: center; gap: .4rem; font-weight: 500; margin: .15rem 0; }}
-    .role-choice input {{ width: auto; }}
+    .danger {{ color: #8a1f11; border-color: #d6a29a; }}
+    .form-actions {{ display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; padding-top: 1rem; }}
+    .form-actions button:first-child {{ color: #fff; border-color: #1d5f9f; background: #1d5f9f; }}
+    .user-editor-grid {{ display: grid; grid-template-columns: minmax(30rem, 1.35fr) minmax(22rem, .8fr); gap: 1.25rem; align-items: start; }}
+    .editor-column {{ display: grid; gap: 1.25rem; align-content: start; min-width: 0; }}
+    .form-field {{ display: grid; grid-template-columns: 10.5rem minmax(0, 1fr); gap: .75rem; align-items: center; margin: .65rem 0; }}
+    .check-row {{ display: flex; gap: .55rem; align-items: flex-start; margin: .65rem 0; font-weight: 500; }}
+    .check-row input, .role-choice input {{ width: auto; margin-top: .18rem; flex: 0 0 auto; }}
+    .role-grid {{ display: grid; grid-template-columns: 1fr; gap: .5rem; }}
+    .role-choice {{ font-weight: 500; }}
+    .role-card {{ display: flex; gap: .65rem; align-items: flex-start; margin: 0; padding: .65rem .7rem; border: 1px solid #d6dbe3; border-radius: .35rem; background: #f9fafc; }}
+    .role-copy {{ display: grid; gap: .08rem; min-width: 0; }}
+    .role-copy small {{ color: #667085; font-weight: 400; }}
+    .role-editor {{ margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #d6dbe3; }}
+    .role-editor .form-field {{ grid-template-columns: 5.5rem minmax(0, 1fr); }}
     .totp-setup {{ display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .8rem; align-items: start; margin-top: .8rem; }}
-    .totp-qr {{ width: 11rem; height: 11rem; border: 1px solid #c8ced8; background: #fff; padding: .4rem; box-sizing: border-box; }}
+    .totp-qr {{ width: 11rem; height: 11rem; border: 1px solid #c8ced8; background: #fff; padding: .4rem; }}
     code.wrap {{ display: block; white-space: normal; overflow-wrap: anywhere; }}
-    .split {{ display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }}
     .toolbar {{ display: flex; flex-direction: column; gap: .35rem; align-items: flex-start; margin-bottom: 1rem; }}
     .toolbar h1 {{ margin: 0; }}
-    @media (max-width: 900px) {{ .top-layout, .split, .totp-setup {{ grid-template-columns: 1fr; }} }}
+    .profile-editor-link {{ margin: .15rem 0 .55rem; text-align: right; }}
+    @media (max-width: 1000px) {{ .top-layout, .user-editor-grid, .totp-setup {{ grid-template-columns: 1fr; }} }}
+    @media (max-width: 620px) {{ body {{ padding: 1rem; }} .form-field, .role-editor .form-field {{ grid-template-columns: 1fr; gap: .25rem; }} th, td {{ padding: .4rem; }} }}
   </style>
+  <link rel="stylesheet" href="../sql_wizard.css">
 </head>
-<body>
+<body class="sqluw-page">
   <div class="toolbar">
     {return_link}
     <h1>SQL User Admin</h1>
@@ -430,11 +542,11 @@ SMTP and ready-made invitation pages are optional application concerns.</p>
             return "<p>No SQL users found yet.</p>"
 
         return (
-            "<table><thead><tr>"
+            "<div class='table-scroll users-scroll'><table><thead><tr>"
             "<th>User id</th><th>Login</th><th>Name</th><th>Email</th><th>Roles</th><th>Status</th><th>2FA</th>"
             "</tr></thead><tbody>"
             + "\n".join(rows)
-            + "</tbody></table>"
+            + "</tbody></table></div>"
         )
 
     def _render_roles_table(self, roles):
@@ -460,21 +572,21 @@ SMTP and ready-made invitation pages are optional application concerns.</p>
         )
 
     def _render_role_form(self, came_from=""):
-        return f"""<form method="post" class="panel">
+        return f"""<form method="post" class="role-editor">
   <h3>Create or update role</h3>
   <input type="hidden" name="save_role" value="1">
   {self._came_from_input(came_from)}
-  <label>Role id
+  <label class="form-field">Role id
     <input name="role_id" value="">
   </label>
-  <label>Title
+  <label class="form-field">Title
     <input name="role_title" value="">
   </label>
-  <label class="role-choice">
+  <label class="check-row">
     <input name="role_enabled" type="checkbox" value="1" checked>
-    Active
+    <span>Active</span>
   </label>
-  <button type="submit">Save role</button>
+  <div class="form-actions"><button type="submit">Save role</button></div>
 </form>"""
 
     def _render_user_form(self, user, roles, selected_roles, REQUEST=None, came_from=""):
@@ -489,53 +601,68 @@ SMTP and ready-made invitation pages are optional application concerns.</p>
         return f"""<form method="post">
   <input type="hidden" name="save_user" value="1">
   {self._came_from_input(came_from)}
-  <div class="top-layout">
-    <fieldset>
-      <legend>Security</legend>
-      <label>User id
-        <input name="edit_user_id" value="{value(user, 'user_id')}" {'readonly' if user else ''}>
-      </label>
-      <label>Login name
-        <input name="login_name" value="{value(user, 'login_name')}">
-      </label>
-      <label>Password
-        <input name="password" type="password" value="">
-      </label>
-      <label>Password hash id
-        <input name="password_hash_id" value="{value(user, 'password_hash_id') or DEFAULT_PASSWORD_HASH_ID}">
-      </label>
-      <label>Recovery email
-        <input name="recovery_email" value="{value(user, 'recovery_email')}">
-      </label>
-      <label class="role-choice">
-        <input name="enabled" type="checkbox" value="1" {'checked' if enabled else ''}>
-        Enabled
-      </label>
+  <div class="user-editor-grid">
+    <div class="editor-column">
+      <fieldset>
+        <legend>Security</legend>
+        <label class="form-field">User id
+          <input name="edit_user_id" value="{value(user, 'user_id')}" {'readonly' if user else ''}>
+        </label>
+        <label class="form-field">Login name
+          <input name="login_name" value="{value(user, 'login_name')}">
+        </label>
+        <label class="form-field">Password
+          <input name="password" type="password" value="">
+        </label>
+        <label class="form-field">Password hash id
+          <input name="password_hash_id" value="{value(user, 'password_hash_id') or DEFAULT_PASSWORD_HASH_ID}">
+        </label>
+        <label class="form-field">Recovery email
+          <input name="recovery_email" value="{value(user, 'recovery_email')}">
+        </label>
+        <label class="check-row">
+          <input name="enabled" type="checkbox" value="1" {'checked' if enabled else ''}>
+          <span>Enabled</span>
+        </label>
+      </fieldset>
+      {self._render_profile_fields(user, REQUEST)}
+    </div>
+    <div class="editor-column">
+      <fieldset>
+        <legend>Roles</legend>
+        {self._render_role_choices(roles, selected_roles)}
+      </fieldset>
       {self._render_totp_settings(user)}
-    </fieldset>
-    <fieldset>
-      <legend>Roles</legend>
-      {self._render_role_choices(roles, selected_roles)}
-    </fieldset>
+    </div>
   </div>
   <div class="form-actions">
-    <button type="submit">Save security and roles</button>
+    <button type="submit">Save user</button>
     {delete_button}
-    <a href="{escape(new_user_href)}">New user</a>
+    <a class="button" href="{escape(new_user_href)}">New user</a>
   </div>
-  {self._render_profile_fields(user, REQUEST)}
 </form>"""
 
     def _render_profile_fields(self, user, REQUEST=None):
+        editor_link = '<p class="profile-editor-link"><a href="manage_profile_fields">Edit profile fields</a></p>'
         template = getattr(self.aq_parent, DEFAULT_PROFILE_FORM_ID, None)
         if template is not None:
             data = self._profile_template_data(user)
             try:
-                return template(client=self, REQUEST=REQUEST or {}, **data)
+                rendered = template(client=self, REQUEST=REQUEST or {}, **data)
             except TypeError:
-                return template(self, REQUEST or {}, **data)
+                rendered = template(self, REQUEST or {}, **data)
+            return editor_link + rendered + render_fields(self.profile_fields, self._profile_extra_values(self._raw_value(user, "user_id")))
 
-        return self._render_builtin_profile_fields(user)
+        return editor_link + self._render_builtin_profile_fields(user) + render_fields(self.profile_fields, self._profile_extra_values(self._raw_value(user, "user_id")))
+
+    def _profile_extra_values(self, user_id):
+        if not user_id:
+            return {}
+        method = getattr(self.aq_parent, DEFAULT_PROFILE_DATA_GET_ID, None)
+        if method is None:
+            return {}
+        row = first_row(method(user_id=user_id))
+        return load_values(getattr(row, "profile_data", "") if row is not None else "")
 
     def _render_totp_settings(self, user):
         enabled = self._truthy(getattr(user, "totp_enabled", False)) if user is not None else False
@@ -562,18 +689,18 @@ SMTP and ready-made invitation pages are optional application concerns.</p>
         return f"""
       <fieldset>
         <legend>Two-factor authentication</legend>
-        <label class="role-choice">
+        <label class="check-row">
           <input name="totp_required" type="checkbox" value="1" {'checked' if required else ''}>
           Require 2FA enrollment before app access
         </label>
-        <label class="role-choice">
+        <label class="check-row">
           <input name="totp_enabled" type="checkbox" value="1" {'checked' if enabled else ''}>
           Require authenticator code at login
         </label>
-        <label>TOTP secret
+        <label class="form-field">TOTP secret
           <input name="totp_secret" value="{escape(secret)}">
         </label>
-        <label class="role-choice">
+        <label class="check-row">
           <input name="generate_totp_secret" type="checkbox" value="1">
           Generate new setup secret when saving
         </label>
@@ -590,21 +717,19 @@ SMTP and ready-made invitation pages are optional application concerns.</p>
         return f"""
   <fieldset>
     <legend>Profile</legend>
-    <div class="split">
-      <label>First name
-        <input name="first_name" value="{value(user, 'first_name')}">
-      </label>
-      <label>Last name
-        <input name="last_name" value="{value(user, 'last_name')}">
-      </label>
-    </div>
-    <label>Display name
+    <label class="form-field">First name
+      <input name="first_name" value="{value(user, 'first_name')}">
+    </label>
+    <label class="form-field">Last name
+      <input name="last_name" value="{value(user, 'last_name')}">
+    </label>
+    <label class="form-field">Display name
       <input name="display_name" value="{value(user, 'display_name')}">
     </label>
-    <label>Email
+    <label class="form-field">Email
       <input name="email" value="{value(user, 'email')}">
     </label>
-    <label>Mobile
+    <label class="form-field">Mobile
       <input name="mobile" value="{value(user, 'mobile')}">
     </label>
   </fieldset>"""
@@ -647,8 +772,9 @@ SMTP and ready-made invitation pages are optional application concerns.</p>
       .split {{ grid-template-columns: 1fr; }}
     }}
   </style>
+  <link rel="stylesheet" href="../sql_wizard.css">
 </head>
-<body>
+<body class="sqluw-page">
   <main>
     <div class="toolbar">
       {back_link}
@@ -738,8 +864,9 @@ SMTP and ready-made invitation pages are optional application concerns.</p>
       .toolbar, .totp-setup {{ align-items: flex-start; grid-template-columns: 1fr; flex-direction: column; }}
     }}
   </style>
+  <link rel="stylesheet" href="../sql_wizard.css">
 </head>
-<body>
+<body class="sqluw-page">
   <main>
     <div class="toolbar">
       {back_link}
@@ -828,10 +955,12 @@ SMTP and ready-made invitation pages are optional application concerns.</p>
             role_id = str(role.role_id)
             title = str(getattr(role, "title", "") or role_id)
             choices.append(
-                "<label class='role-choice'>"
+                "<label class='role-choice role-card'>"
                 f"<input name='roles:list' type='checkbox' value='{escape(role_id)}' {'checked' if role_id in selected else ''}>"
-                f"{escape(role_id)} <span class='muted'>{escape(title) if title != role_id else ''}</span>"
-                "</label>"
+                "<span class='role-copy'>"
+                f"<strong>{escape(role_id)}</strong>"
+                f"<small>{escape(title) if title != role_id else 'Application role'}</small>"
+                "</span></label>"
             )
         return "<div class='role-grid'>" + "\n".join(choices) + "</div>"
 
