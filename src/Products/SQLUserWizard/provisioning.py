@@ -3,11 +3,15 @@
 import hashlib
 import hmac
 import json
+import logging
 import re
 import secrets
+import smtplib
+import ssl
 import time
 from contextlib import contextmanager
 from collections import OrderedDict
+from email.message import EmailMessage
 from threading import Lock
 
 import transaction
@@ -22,6 +26,9 @@ from .config import DEFAULT_MANIFEST_ID, DEFAULT_PAS_ID
 from .password import encode_password
 from .security import csrf_field, require_post
 from .sqladmin import first_row, save_sql_user
+
+
+logger = logging.getLogger("Products.SQLUserWizard.invitations")
 
 
 ADMINISTER = "SQLUserWizard: Administer invitations"
@@ -78,10 +85,12 @@ class SQLUserProvisioning(SimpleItem):
     """Methods are callable by authorized scripts, not HTTP traversal."""
 
     meta_type = "SQL User Provisioning"
+    zmi_icon = "fas fa-user-plus"
     security = ClassSecurityInfo()
     security.declareObjectPublic()
     security.setDefaultAccess(False)
     security.declarePublic("meta_type")
+    security.declarePublic("zmi_icon")
     security.setPermissionDefault(ADMINISTER, ("Manager",))
     security.setPermissionDefault(COMPLETE, ("Manager",))
     security.setPermissionDefault(INSPECT, ("Manager",))
@@ -95,7 +104,8 @@ class SQLUserProvisioning(SimpleItem):
     def __bobo_traverse__(self, REQUEST, name):
         if name in ("create_invitation", "inspect_invitation", "list_invitations",
                     "rotate_invitation_secret", "revoke_invitation",
-                    "complete_invitation", "record_delivery"):
+                    "complete_invitation", "record_delivery", "log_delivery",
+                    "deliver_invitation_email"):
             raise Forbidden("Use an authorized application script")
         # Let Zope apply its normal attribute traversal and publication checks
         # for inherited management views; only the API entry points are blocked.
@@ -249,10 +259,98 @@ class SQLUserProvisioning(SimpleItem):
         self._check(ADMINISTER, REQUEST)
         if channel not in ("manual", "email") or result not in ("sent", "failed", "pending"):
             raise ValueError("Unsupported delivery status")
-        self._plugin().zsql_invitation_record_delivery(
-            invitation_id=text(invitation_id, "invitation id", 64, True),
+        invitation_id = text(invitation_id, "invitation id", 64, True)
+        plugin = self._plugin()
+        plugin.zsql_invitation_record_delivery(
+            invitation_id=invitation_id,
             delivery_channel=channel, delivery_result=result)
+        row = first_row(plugin.zsql_invitation_get(invitation_id=invitation_id))
+        logger.info(
+            "Invitation delivery invitation_id=%s channel=%s result=%s recipient=%s",
+            invitation_id, channel, result, getattr(row, "email", "") if row else "")
         return dict(recorded=True)
+
+    security.declareProtected(ADMINISTER, "log_delivery")
+    def log_delivery(self, invitation_id, channel, result, recipient, REQUEST, detail=""):
+        """Append a delivery event without starting another database transaction."""
+        self._check(ADMINISTER, REQUEST)
+        if channel not in ("manual", "email") or result not in ("sent", "failed", "pending"):
+            raise ValueError("Unsupported delivery status")
+        invitation_id = text(invitation_id, "invitation id", 64, True)
+        recipient = text(recipient, "recipient", 255, True).casefold()
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", recipient):
+            raise ValueError("Invalid delivery recipient")
+        detail = text(detail, "delivery detail", 300).replace("\r", " ").replace("\n", " ")
+        logger.info(
+            "Invitation delivery invitation_id=%s channel=%s result=%s recipient=%s detail=%s",
+            invitation_id, channel, result, recipient, detail)
+        return dict(recorded=True)
+
+    security.declareProtected(ADMINISTER, "deliver_invitation_email")
+    def deliver_invitation_email(self, invitation_id, token, recipient, REQUEST):
+        """Send one invitation through the explicitly enabled local MailHost."""
+        self._check(ADMINISTER, REQUEST)
+        invitation_id = text(invitation_id, "invitation id", 64, True)
+        token = text(token, "invitation token", 128, True)
+        if not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
+            raise ValueError("Invalid invitation token")
+        recipient = text(recipient, "recipient", 255, True).casefold()
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", recipient):
+            raise ValueError("Invalid delivery recipient")
+        application = aq_parent(aq_inner(self))
+        invitations = application._getOb("invitations", None)
+        mailhosts = invitations.objectValues("Mail Host") if invitations is not None else ()
+        if (invitations is None or not invitations.getProperty("sqluw_mail_enabled", False)
+                or not mailhosts):
+            return dict(delivery="manual")
+        sender = text(invitations.getProperty("sqluw_mail_from", ""), "sender", 255, True)
+        subject = text(invitations.getProperty(
+            "sqluw_mail_subject", "Your account invitation"), "subject", 255, True)
+        base_url = text(invitations.getProperty("sqluw_invitation_url", ""),
+                        "invitation URL", 2048, True).rstrip("/")
+        if ("@" not in sender or "\r" in sender or "\n" in sender
+                or "\r" in subject or "\n" in subject
+                or not base_url.startswith(("https://", "http://"))):
+            raise ValueError("Invitation email settings are invalid")
+        body = ("You have been invited to create an account.\n\n"
+                "Open this link to continue:\n" + base_url + "?token=" + token + "\n\n"
+                "This invitation expires in 24 hours.")
+        result, detail = "sent", ""
+        try:
+            # Plone patches zope.sendmail to read its portal registry and can
+            # therefore break a MailHost stored in a plain Zope application
+            # folder. Use the reviewed local MailHost's transport settings
+            # directly; no acquired or global mail settings are consulted.
+            mailhost = mailhosts[0]
+            message = EmailMessage()
+            message["From"], message["To"], message["Subject"] = sender, recipient, subject
+            message.set_content(body)
+            context = ssl.create_default_context()
+            mailer_class = smtplib.SMTP_SSL if mailhost.implicit_tls else smtplib.SMTP
+            kwargs = dict(host=mailhost.smtp_host, port=int(mailhost.smtp_port), timeout=30)
+            if mailhost.implicit_tls:
+                kwargs["context"] = context
+            with mailer_class(**kwargs) as mailer:
+                mailer.ehlo()
+                if mailhost.force_tls and not mailhost.implicit_tls:
+                    mailer.starttls(context=context)
+                    mailer.ehlo()
+                if mailhost.smtp_uid:
+                    mailer.login(mailhost.smtp_uid, mailhost.smtp_pwd)
+                mailer.send_message(message, from_addr=sender, to_addrs=[recipient])
+        except Exception as exc:
+            result = "failed"
+            detail = str(exc)[:300].replace("\r", " ").replace("\n", " ")
+            logger.exception(
+                "Invitation SMTP failure invitation_id=%s recipient=%s",
+                invitation_id, recipient)
+        logger.info(
+            "Invitation delivery invitation_id=%s channel=email result=%s recipient=%s detail=%s",
+            invitation_id, result, recipient, detail)
+        response = dict(delivery=result)
+        if detail:
+            response["delivery_error"] = detail
+        return response
 
     security.declareProtected(COMPLETE, "complete_invitation")
     def complete_invitation(self, token, user_id, login_name, password, profile, REQUEST):

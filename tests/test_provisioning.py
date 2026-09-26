@@ -1,11 +1,61 @@
 import pytest
 import transaction
+from AccessControl import ClassSecurityInfo
 from AccessControl.SecurityManagement import noSecurityManager
+from OFS.SimpleItem import SimpleItem
 from Shared.DC.ZRDB.TM import TM
 from zExceptions import Forbidden, Unauthorized
 
 from Products.SQLUserWizard.invitation_install import enable_invitation_storage
+from Products.SQLUserWizard.compat import InitializeClass
 from test_integration import app_folder, installed, post, request, SQLiteConnection
+
+
+class DummyMailHost(SimpleItem):
+    meta_type = "Mail Host"
+    security = ClassSecurityInfo()
+
+    def __init__(self, object_id):
+        self.id = object_id
+        self.messages = []
+        self.smtp_host = "smtp.example.invalid"
+        self.smtp_port = 587
+        self.smtp_uid = "smtp-user"
+        self.smtp_pwd = "smtp-password"
+        self.force_tls = True
+        self.implicit_tls = False
+
+    security.declarePublic("send")
+    def send(self, body, **headers):
+        self.messages.append((body, headers))
+
+
+InitializeClass(DummyMailHost)
+
+
+class DummySMTP:
+    messages = []
+
+    def __init__(self, **settings):
+        self.settings = settings
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *unused):
+        return False
+
+    def ehlo(self):
+        pass
+
+    def starttls(self, **unused):
+        pass
+
+    def login(self, username, password):
+        self.credentials = (username, password)
+
+    def send_message(self, message, **routing):
+        self.messages.append((message, routing))
 
 
 @pytest.fixture(autouse=True)
@@ -43,6 +93,54 @@ def test_lifecycle_and_sanitized_inspection(provisioning):
     assert not provisioning.inspect_invitation(rotated["token"], request())["valid"]
 
 
+def test_generated_create_script_only_uses_local_mailhost_and_logs_delivery(
+        transactional, caplog, monkeypatch):
+    controller, resource = transactional
+    DummySMTP.messages = []
+    monkeypatch.setattr("Products.SQLUserWizard.provisioning.smtplib.SMTP", DummySMTP)
+    invitations = controller.aq_parent.invitations
+    invitations._setObject("local_mail", DummyMailHost("local_mail"))
+    invitations._setProperty("sqluw_mail_enabled", True, "boolean")
+    invitations._setProperty("sqluw_mail_from", "sender@example.invalid", "string")
+    invitations._setProperty("sqluw_mail_subject", "Account invitation", "string")
+    invitations._setProperty("sqluw_invitation_url",
+                             "https://accounts.example.invalid/invitations/form", "string")
+    invitations.REQUEST = post(controller, {
+        "email": "recipient@example.invalid",
+    })
+    with caplog.at_level("INFO", logger="Products.SQLUserWizard.invitations"):
+        result = invitations.create_invitation()
+    assert result["delivery"] == "sent"
+    message, routing = DummySMTP.messages[0]
+    assert result["token"] in message.get_content()
+    assert routing["to_addrs"] == ["recipient@example.invalid"]
+    assert routing["from_addr"] == "sender@example.invalid"
+    assert result["token"] not in caplog.text
+    assert "recipient@example.invalid" in caplog.text
+    row = resource.db.execute(
+        "select delivery_channel, delivery_result from pas_invitations where invitation_id=?",
+        (result["invitation_id"],)).fetchone()
+    assert row == (None, None)
+
+
+def test_generated_create_script_ignores_acquired_parent_mailhost(transactional):
+    controller, unused = transactional
+    application = controller.aq_parent
+    application._setObject("parent_mail", DummyMailHost("parent_mail"))
+    invitations = application.invitations
+    invitations._setProperty("sqluw_mail_enabled", True, "boolean")
+    invitations._setProperty("sqluw_mail_from", "sender@example.invalid", "string")
+    invitations._setProperty("sqluw_mail_subject", "Account invitation", "string")
+    invitations._setProperty("sqluw_invitation_url",
+                             "https://accounts.example.invalid/invitations/form", "string")
+    invitations.REQUEST = post(controller, {
+        "email": "recipient@example.invalid",
+    })
+    result = invitations.create_invitation()
+    assert result["delivery"] == "manual"
+    assert application.parent_mail.messages == []
+
+
 @pytest.mark.parametrize("role", ["Manager", "Owner", "Anonymous", "Authenticated", "manager", "Other"])
 def test_unapproved_roles_denied(provisioning, role):
     with pytest.raises(ValueError):
@@ -65,7 +163,8 @@ def test_permission_csrf_and_direct_traversal(provisioning):
 def test_zmi_permission_edit_renders_and_preserves_role_mapping(provisioning):
     from AccessControl.PermissionRole import rolesForPermissionOn
     from Products.SQLUserWizard.provisioning import INSPECT
-    provisioning.aq_parent._addRole("InvitationInspector")
+    if "InvitationInspector" not in provisioning.aq_parent.valid_roles():
+        provisioning.aq_parent._addRole("InvitationInspector")
     provisioning.manage_role("InvitationInspector", permissions=[INSPECT], REQUEST=request())
     assert "InvitationInspector" in rolesForPermissionOn(INSPECT, provisioning)
 
@@ -201,10 +300,12 @@ def application_script(folder, name, body, roles=()):
 def test_real_restricted_script_requires_narrow_proxy_role(provisioning):
     from Products.SQLUserWizard.provisioning import INSPECT
     folder = provisioning.aq_parent
-    folder._addRole("InvitationInspector")
+    if "InvitationInspector" not in folder.valid_roles():
+        folder._addRole("InvitationInspector")
     provisioning.manage_permission(INSPECT, roles=("Manager", "InvitationInspector"), acquire=0)
     invitation = create(provisioning)
-    folder.manage_addFolder("invitations")
+    if "invitations" not in folder.objectIds():
+        folder.manage_addFolder("invitations")
     script = application_script(folder.invitations, "inspect",
         "return context.sql_user_provisioning.inspect_invitation(token, req)")
     noSecurityManager()
@@ -236,10 +337,12 @@ def test_real_completion_script_uses_proxy_without_manager(transactional):
     from Products.SQLUserWizard.provisioning import COMPLETE
     controller, resource = transactional
     folder = controller.aq_parent
-    folder._addRole("InvitationCompleter")
+    if "InvitationCompleter" not in folder.valid_roles():
+        folder._addRole("InvitationCompleter")
     controller.manage_permission(COMPLETE, roles=("Manager", "InvitationCompleter"), acquire=0)
     invitation = create(controller)
-    folder.manage_addFolder("invitations")
+    if "invitations" not in folder.objectIds():
+        folder.manage_addFolder("invitations")
     script = application_script(folder.invitations, "complete",
         'return context.sql_user_provisioning.complete_invitation(token, "new", "new", "long-password", {}, req)',
         ("InvitationCompleter",))
@@ -269,8 +372,10 @@ def test_documented_script_bodies_create_inspect_and_complete(transactional):
     source = (Path(__file__).parents[1] / "docs/invitation-script-examples.md").read_text()
     bodies = re.findall(r"```python\n(.*?)\n```", source, re.S)[:3]
     assert len(bodies) == 3
-    folder._addRole("InvitationInspector")
-    folder._addRole("InvitationCompleter")
+    if "InvitationInspector" not in folder.valid_roles():
+        folder._addRole("InvitationInspector")
+    if "InvitationCompleter" not in folder.valid_roles():
+        folder._addRole("InvitationCompleter")
     controller.manage_permission(INSPECT, roles=("Manager", "InvitationInspector"), acquire=0)
     controller.manage_permission(COMPLETE, roles=("Manager", "InvitationCompleter"), acquire=0)
     scripts = []

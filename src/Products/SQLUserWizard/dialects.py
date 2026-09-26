@@ -2,6 +2,8 @@
 
 from .config import DEFAULT_PROFILE_GET_ID
 from .config import DEFAULT_PROFILE_SAVE_ID
+from .config import DEFAULT_PROFILE_DATA_GET_ID
+from .config import DEFAULT_PROFILE_DATA_SAVE_ID
 from .config import DEFAULT_TABLES
 from .config import postgresql_templates
 from .config import profile_postgresql_templates
@@ -118,6 +120,12 @@ def managed_templates(dialect="postgresql", tables=None):
             "title": "Create PAS SQL user profiles table",
             "arguments": "",
             "template": profiles_table,
+        },
+        "setup_profile_data_column": {
+            "id": "zsql_pas_setup_profile_data_column",
+            "title": "Add extensible profile data column",
+            "arguments": "",
+            "template": _profile_data_column_sql(normalized, profiles),
         },
         "setup_roles": {
             "id": "zsql_pas_setup_roles",
@@ -309,7 +317,45 @@ where user_id = <dtml-sqlvar user_id type=string>""",
             "arguments": "user_id first_name last_name display_name email mobile",
             "template": _upsert_profile_sql(normalized, profiles),
         },
+        "get_profile_data": {
+            "id": DEFAULT_PROFILE_DATA_GET_ID,
+            "title": "Fetch extensible SQL user profile data",
+            "arguments": "user_id",
+            "template": _limit_one(normalized, f"""select {_top_one(normalized)}profile_data
+from {profiles}
+where user_id = <dtml-sqlvar user_id type=string>"""),
+        },
+        "save_profile_data": {
+            "id": DEFAULT_PROFILE_DATA_SAVE_ID,
+            "title": "Save extensible SQL user profile data",
+            "arguments": "user_id profile_data",
+            "template": f"""update {profiles}
+set profile_data = <dtml-sqlvar profile_data type=string>,
+    updated_at = {_current_timestamp(normalized)}
+where user_id = <dtml-sqlvar user_id type=string>""",
+        },
     }
+
+
+def _profile_data_column_sql(dialect, profiles):
+    if dialect == "sqlite":
+        return f"alter table {profiles} add column profile_data text"
+    if dialect == "mysql":
+        return f"alter table {profiles} add column if not exists profile_data longtext"
+    if dialect == "mssql":
+        return f"""if col_length(N'{profiles}', N'profile_data') is null
+alter table {profiles} add profile_data nvarchar(max)"""
+    if dialect.startswith("oracle"):
+        return f"""declare
+    column_count number;
+begin
+    select count(*) into column_count from user_tab_columns
+      where table_name = upper('{profiles}') and column_name = 'PROFILE_DATA';
+    if column_count = 0 then
+        execute immediate 'alter table {profiles} add profile_data clob';
+    end if;
+end;"""
+    raise NotImplementedError(f"Unsupported profile data dialect: {dialect}")
 
 
 def _bool_type(dialect):

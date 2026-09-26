@@ -97,11 +97,11 @@ def _protect_existing_sql(installer, plugin):
     # and locally adapted SQL can differ from today's templates or manifest.
     for method in plugin.objectValues():
         if getattr(method, "meta_type", "") == "Z SQL Method":
-            method.manage_permission("Use Database Methods", roles=(), acquire=0)
+            method.manage_permission("Use Database Methods", roles=("Manager",), acquire=0)
     for object_id in (DEFAULT_PROFILE_GET_ID, DEFAULT_PROFILE_SAVE_ID):
         method = installer._local_object(installer.folder, object_id)
         if method is not None:
-            method.manage_permission("Use Database Methods", roles=(), acquire=0)
+            method.manage_permission("Use Database Methods", roles=("Manager",), acquire=0)
     for old_id in ("zsql_pas_classic_acl_users_migration", "zsql_pas_classic_migration_tables"):
         if old_id in plugin.objectIds():
             plugin._delObject(old_id)

@@ -1,8 +1,36 @@
 # Changelog
 
 All notable changes to Products.SQLUserWizard are tracked here. The project is
-still in alpha, so entries include lab verification notes when they affect
+still pre-release, so entries include lab verification notes when they affect
 install confidence.
+
+## 0.2.0b1 - 2026-09-26
+
+- Added a Manager-only profile field editor with validated text, email, phone,
+  URL, textarea, checkbox, and select fields. Extra values are stored in the
+  managed SQL profile row through an explicit JSON allowlist.
+- Enabling invitations now creates or repairs the complete `invitations`
+  example folder, including forms, restricted wrappers, narrow proxy roles,
+  local CSS, and Manager documentation.
+- Added a shared static stylesheet, polished SQL User Admin/profile layouts,
+  and removed profile/logout links from the anonymous login screen.
+- Added the SQL provisioning controller ZMI icon and repaired editable profile
+  form rendering when preview values are missing.
+- Fixed ZMI folder listings for managed installations. Generated Z SQL Methods
+  now grant `Use Database Methods` only to `Manager`, without acquisition,
+  instead of granting it to no roles. This keeps anonymous and ordinary direct
+  calls blocked while allowing Managers to traverse and administer the objects.
+- Install / Repair applies the corrected permission to existing generated
+  identity, profile and invitation methods.
+- Added optional invitation email delivery through a MailHost stored directly
+  in the generated invitations folder, with Manager-controlled sender, subject,
+  public URL and TOTP policy. Delivery events omit tokens, message bodies and
+  SMTP credentials from the server log.
+- Simplified invitation acceptance to one login name, added field guidance and
+  replaced the raw completion result with an account-created page leading to
+  normal login.
+- Repair can safely update managed scripts that already carry narrow proxy
+  roles by clearing and restoring those roles around source replacement.
 
 ## 0.2.0a2 - 2026-09-26
 

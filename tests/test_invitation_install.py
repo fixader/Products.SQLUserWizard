@@ -13,6 +13,12 @@ def test_storage_is_explicit_and_repair_preserves_ownership(installed):
     db = installed.test_db._v_db
     assert not db.execute("select name from sqlite_master where name like 'pas_invitation%'").fetchall()
     enable_invitation_storage(installed)
+    invitations = installed.invitations
+    assert set(("create_invitation", "inspect_invitation", "complete_invitation", "form",
+                "create_form", "sql_wizard.css", "README-invitations.html")) <= set(invitations.objectIds())
+    assert invitations.create_invitation._proxy_roles == ()
+    assert invitations.inspect_invitation._proxy_roles == ("InvitationInspector",)
+    assert invitations.complete_invitation._proxy_roles == ("InvitationCompleter",)
     db.execute("insert into pas_invitations (invitation_id, secret_hash, email, creator_id, created_at, expires_at) values ('i','h','u@example.invalid','m',1,100)")
     before = list(db.iterdump())
     enable_invitation_storage(installed)
@@ -84,6 +90,9 @@ def test_setup_page_only_enables_after_protected_post(installed):
     assert "enabled" in admin.manage_invitations(post(admin, data))
     assert installed.sql_user_provisioning.totp_required
     assert installed.sql_user_provisioning.privileged_roles == ("SiteAdmin",)
+    policy = post(admin, {"save_invitation_policy": "1"})
+    assert "policy was saved" in admin.manage_invitations(policy)
+    assert not installed.sql_user_provisioning.totp_required
 
 
 def test_plone_rejection_precedes_invitation_ddl(installed, monkeypatch):

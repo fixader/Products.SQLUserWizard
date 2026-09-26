@@ -110,3 +110,6 @@ def test_admin_return_link_is_before_heading():
     html = admin._render("", "", {"came_from": "/App/manage_workspace"})
 
     assert html.index("Back to app") < html.index("<h1>SQL User Admin</h1>")
+    assert html.count('href="manage_profile_fields">Edit profile fields</a>') == 1
+    assert 'class="button" href="manage_profile_fields"' not in html
+    assert html.index('href="manage_profile_fields">Edit profile fields</a>') < html.index("<legend>Profile</legend>")

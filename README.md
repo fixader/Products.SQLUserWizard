@@ -2,11 +2,11 @@
 
 A Zope product that creates a local SQL-backed PAS installation, with user
 administration, roles, profiles, authenticator 2FA and inherited fallback access.
-Version **0.2.0a2** is an alpha candidate under lab verification, not yet published.
-The latest published TestPyPI version remains **0.2.0a1**. The release-tag
+Version **0.2.0b1** is a beta candidate under lab verification, not yet published.
+The latest published TestPyPI version remains **0.2.0a2**. The release-tag
 installation examples below apply after the candidate is tagged and published.
 See [verification status](docs/status.md) for tested environments and remaining
-confirmation work, and [release notes](docs/release-0.2.0a2.md) before upgrading.
+confirmation work, and [release notes](docs/release-0.2.0b1.md) before upgrading.
 
 ## Why this exists
 
@@ -54,7 +54,7 @@ older installations and [release history](CHANGELOG.md) for the earlier design.
 Previously verified managed installations establish the compatibility baseline:
 PostgreSQL, SQLite, MariaDB/MySQL, Microsoft SQL Server and Oracle 11g-style SQL
 on Zope 6.1, plus PostgreSQL on Zope 5.8.3. **These combinations remain expected
-to work with 0.2.0a2.** They have not been dropped merely because every live test
+to work with 0.2.0b1.** They have not been dropped merely because every live test
 has not yet been repeated for this candidate.
 
 The new session and security flows have been verified on Zope 6.1 with SQLite
@@ -100,19 +100,19 @@ available if SQL is unavailable. Use distinct SQL and fallback ids/logins.
 ## Installation
 
 Use the Zope instance's Python environment. The commands below install the
-checked-out source version. For the exact release, select the `v0.2.0a2` tag:
+checked-out source version. For the exact release, select the `v0.2.0b1` tag:
 
 ```bash
 git clone https://github.com/fixader/Products.SQLUserWizard.git
 cd Products.SQLUserWizard
-git checkout v0.2.0a2
+git checkout v0.2.0b1
 pip install -e .
 ```
 
 Alternatively, install the tagged source directly:
 
 ```bash
-pip install "Products.SQLUserWizard @ git+https://github.com/fixader/Products.SQLUserWizard.git@v0.2.0a2"
+pip install "Products.SQLUserWizard @ git+https://github.com/fixader/Products.SQLUserWizard.git@v0.2.0b1"
 ```
 
 The GitHub release includes a wheel and source distribution. PyPI publication

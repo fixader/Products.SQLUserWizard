@@ -77,4 +77,6 @@ def enable_invitation_storage(folder, tables=None, allowed_roles=("Member",),
     manifest.manage_edit(title=manifest.title, data=json.dumps(data, indent=2, sort_keys=True))
     if controller is None:
         folder._setObject(CONTROLLER_ID, SQLUserProvisioning(allowed_roles, privileged_roles, totp_required))
-    return dict(schema_revision=1, tables=dict(tables))
+    from .invitation_examples import install_invitation_examples
+    install_invitation_examples(folder, allowed_roles)
+    return dict(schema_revision=1, tables=dict(tables), examples_path="invitations")

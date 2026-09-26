@@ -1,7 +1,7 @@
 # Task: Optional invitation workflow product
 
 Created: 2026-09-25
-Status: Design only. Implement the SQLUserWizard invitation API first.
+Status: Superseded for the current scope by the generated workflow in 0.2.0b1.
 
 This is a living design document. Update it as the core API and application
 examples establish concrete requirements. The add-on has not been implemented;
@@ -21,14 +21,17 @@ checks, secret generation and hashing, expiry, revocation, single-use enforcemen
 permissions, ordinary-role restrictions and transactional user provisioning.
 These operations are exposed through its documented, protected controller API.
 
-The optional product owns ready-to-use forms, application scripts, presentation,
-delivery orchestration and setup guidance. It must call the same public wrapper
-API available to application authors. It must not access private controller
-helpers, raw SQL methods, database connections or PAS internals.
+Version 0.2.0b1 now generates the ready-to-use forms, application scripts,
+presentation, narrow MailHost delivery and setup guidance directly when a
+Manager enables invitations. A future add-on would need a broader workflow to
+justify a separate package. It must still call the same public wrapper API and
+must not access private controller helpers, raw SQL methods, database
+connections or PAS internals.
 
 Application configuration owns branding, the canonical HTTPS origin, support
 information, mail wording and selection of approved ordinary roles. A configured
-MailHost owns SMTP transport and credentials. SQLUserWizard does not send email.
+local MailHost owns SMTP transport settings and credentials. SQLUserWizard's
+protected controller sends only the fixed invitation message.
 
 ## Optional activation
 
