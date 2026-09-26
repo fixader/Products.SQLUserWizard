@@ -9,10 +9,10 @@ updated persistent state immediately. Invitation completion validates and saves
 configured values in the managed profile JSON within its existing explicit SQL
 transaction.
 
-The candidate source and repaired persistent invitation scripts are installed
-on the Plone 6.2.2 / Zope 6.2 chapter lab. The live admin profile renders one
+The published TestPyPI wheel is installed on the Plone 6.2.2 / Zope 6.2 chapter
+lab. The service restarted successfully. The live admin profile renders one
 fieldset with all three configured address fields, and both generated public
-scripts compile with their narrow proxy roles.
+scripts compile with their narrow proxy roles after the package reinstall.
 
 Version [0.2.0b2](https://test.pypi.org/project/Products.SQLUserWizard/0.2.0b2/)
 was published through GitHub Actions trusted publishing. The downloaded wheel
