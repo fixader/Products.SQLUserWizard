@@ -19,6 +19,9 @@ See the [API and transaction boundaries](invitation-api.md),
 [verification status](status.md). The optional workflow/UI add-on is a separate
 future product, not a dependency of the core API.
 
-The local suite currently has 165 passing tests. Seven live PostgreSQL tests
+The local suite currently has 169 passing tests. Seven live PostgreSQL tests
 passed with OpenODBCDA 1.1.1, including concurrent completion, injected failures
-and rollback after a request abort. Chapter 4 HTTP verification is in progress.
+and rollback after a request abort. Chapter 4 HTTP verification passed on Plone 6.2.2 / Zope 6.2, including invitation
+acceptance, replay rejection, normal login/TOTP and fallback access. Plone CSRF
+interoperability and provisioning ZMI permission editing were fixed and retested.
+A visual usability review and verification on other database families remain.

@@ -84,3 +84,21 @@ def test_setup_page_only_enables_after_protected_post(installed):
     assert "enabled" in admin.manage_invitations(post(admin, data))
     assert installed.sql_user_provisioning.totp_required
     assert installed.sql_user_provisioning.privileged_roles == ("SiteAdmin",)
+
+
+def test_plone_rejection_precedes_invitation_ddl(installed, monkeypatch):
+    from Products.SQLUserWizard import security
+    from zExceptions import Forbidden
+    admin = installed.sql_user_admin
+    req = post(admin, dict(enable_invitations="1", invitations_table="pas_invitations",
+                           invitation_roles_table="pas_invitation_roles", allowed_roles="Member"))
+    def reject(obj, request, verify=False):
+        if verify:
+            raise Forbidden("Invalid Plone authenticator")
+        return ""
+    monkeypatch.setattr(security, "_plone_authenticator", reject)
+    with pytest.raises(Forbidden, match="Plone"):
+        admin.manage_invitations(req)
+    assert "sql_user_provisioning" not in installed.objectIds()
+    assert not installed.test_db._v_db.execute(
+        "select name from sqlite_master where name like 'pas_invitation%'").fetchall()

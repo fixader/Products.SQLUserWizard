@@ -6,7 +6,7 @@ install confidence.
 
 ## 0.2.0a2 - 2026-09-26
 
-Release candidate under lab verification; not yet published.
+Release candidate verified in the chapter 4 lab; not yet published.
 
 - Added opt-in invitation storage and a permission-checked Script (Python) API.
   Ordinary installation and startup do not create invitation tables.
@@ -17,6 +17,10 @@ Release candidate under lab verification; not yet published.
   including rollback after a later request abort. Removed the development-only
   PostgreSQL single-statement workaround; other adapters must participate in
   Zope transactions before writing.
+- Fixed initial CSRF key persistence under Plone GET-write protection and checked
+  Plone form authenticators before SQL changes. Neither CSRF layer is disabled.
+- Fixed provisioning ZMI permission editing so role updates survive response
+  rendering. Full chapter 4 HTTP invitation/login/TOTP/fallback tests passed.
 - Invitation attempt limits survive aborted requests; limits are per worker.
 - Added application-script examples and a separate optional workflow-product design.
 

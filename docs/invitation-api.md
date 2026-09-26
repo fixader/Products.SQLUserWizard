@@ -57,6 +57,8 @@ is still pending. Template and script installation is not yet automated.
 `REQUEST` is the current Zope request. Render
 `context.sql_user_provisioning.csrf_field(context.REQUEST)` inside every mutating
 form; the token must be generated for the same user as the submitted request.
+When Plone protection is installed, the helper also renders its `_authenticator`
+field. Submit both fields; validation occurs before database writes.
 
 ```python
 create_invitation(email, roles, REQUEST, phone="", user_id="", login_name="",
@@ -143,8 +145,9 @@ across ZODB and multiple databases, nor a guarantee against an ambiguous result
 if the connection fails during physical commit. Do not blindly retry account
 creation after such a failure; inspect state in a new request first.
 
-Live invitation verification on other database families, the chapter 4 browser
-flow and Zope 5 wrapper confirmation remain pending. The SQL workflow is shared;
+Chapter 4 HTTP invitation/login/TOTP/fallback verification passed on Plone 6.2.2
+and Zope 6.2. Live invitation verification on other database families, visual
+browser usability and Zope 5 wrapper confirmation remain pending. The SQL workflow is shared;
 that alone does not establish live compatibility on every driver or storage engine.
 
 ## Attempt limits

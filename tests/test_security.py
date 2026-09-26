@@ -79,6 +79,33 @@ def test_plone_marks_only_initial_csrf_key_write_safe(monkeypatch):
         require_post(obj, Request("POST", csrf_token="invalid"))
 
 
+def test_optional_plone_authenticator_is_rendered_and_checked(monkeypatch):
+    import sys
+    from types import ModuleType
+    import zope.component
+    auth = ModuleType("plone.protect.authenticator")
+    auth.createToken = lambda manager: "plone-test-token"
+    def check(request, manager):
+        if request.form.get("_authenticator") != "plone-test-token":
+            raise Forbidden("Invalid Plone authenticator")
+    auth.check = check
+    auto = ModuleType("plone.protect.auto")
+    auto.getRoot = lambda obj: obj
+    auto.getRootKeyManager = lambda root: object()
+    interfaces = ModuleType("plone.keyring.interfaces")
+    interfaces.IKeyManager = object()
+    for module in (auth, auto, interfaces):
+        monkeypatch.setitem(sys.modules, module.__name__, module)
+    monkeypatch.setattr(zope.component, "queryUtility", lambda interface: object())
+    obj = SQLUserAdmin()
+    req = authorized(obj)
+    assert 'name="_authenticator"' in csrf_field(obj, req)
+    with pytest.raises(Forbidden, match="Plone"):
+        require_post(obj, req)
+    req.form["_authenticator"] = "plone-test-token"
+    require_post(obj, req)
+
+
 @pytest.mark.parametrize("action", ["delete_user", "save_user", "save_role"])
 @pytest.mark.parametrize("method", ["GET", "POST"])
 def test_admin_rejects_unprotected_changes_before_sql(action, method):
