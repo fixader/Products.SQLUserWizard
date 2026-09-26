@@ -2,7 +2,7 @@
 
 ## Invitation development checkpoint, 2026-09-26
 
-Branch `feature/invitations` targets an upcoming `0.2.0a2`; it is not published.
+Branch `feature/invitations` contains the verified `0.2.0a2` release source.
 169 local tests pass, including executable Script (Python) examples, optional
 storage repair and attempt limits that survive transaction aborts. Seven separate
 live PostgreSQL tests passed through Z SQL Methods and OpenODBCDA 1.1.1 on a

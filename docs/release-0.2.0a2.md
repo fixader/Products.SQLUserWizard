@@ -1,7 +1,8 @@
-# 0.2.0a2 alpha candidate
+# SQLUserWizard 0.2.0a2
 
-This candidate is being verified in the chapter 4 lab. It has not yet been
-published to TestPyPI or production PyPI.
+Release date: 2026-09-26. This is an alpha release for controlled evaluation.
+Publication to TestPyPI verifies the distribution and installation path;
+publication to the main PyPI index remains a separate decision.
 
 - Adds optional invitation storage, explicitly enabled from SQL User Admin.
 - Provides permission-checked application Script (Python) APIs for creation,

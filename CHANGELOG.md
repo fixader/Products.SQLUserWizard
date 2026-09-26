@@ -6,7 +6,7 @@ install confidence.
 
 ## 0.2.0a2 - 2026-09-26
 
-Release candidate verified in the chapter 4 lab; not yet published.
+Alpha release verified in the chapter 4 lab.
 
 - Added opt-in invitation storage and a permission-checked Script (Python) API.
   Ordinary installation and startup do not create invitation tables.
