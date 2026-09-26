@@ -2,12 +2,12 @@
 
 ## Invitation development checkpoint, 2026-09-26
 
-The 0.2.0b1 candidate passes 176 local tests and is installed on the chapter 4
+The 0.2.0b1 beta passes 176 local tests and is installed on the chapter 4
 lab. Live checks cover the profile-field editor and SQL JSON storage, generated
 invitation objects and permissions, shared CSS, ZMI traversal, and anonymous
 login navigation. SMTP delivery through a local invitation MailHost, optional
 TOTP enrollment, invitation acceptance, ordinary login and the secure profile
-test page also pass. TestPyPI publication is pending.
+test page also pass. The exact verified artifacts are published on TestPyPI.
 
 Release `v0.2.0a2` contains the verified invitation implementation and is
 published on TestPyPI.
@@ -121,6 +121,14 @@ any database calls; three regression cases cover this guard.
   The earlier `v0.2.0a1` artifacts remain available unchanged.
 
 ## TestPyPI publication
+
+Version [0.2.0b1](https://test.pypi.org/project/Products.SQLUserWizard/0.2.0b1/)
+was published as the first beta on 2026-09-26 through GitHub Actions trusted
+publishing. The published wheel and source archive SHA-256 hashes match the
+GitHub prerelease assets. A clean virtual environment installed the exact beta
+wheel from the TestPyPI simple index and reported the beta package metadata.
+The [publication run](https://github.com/fixader/Products.SQLUserWizard/actions/runs/36229162555)
+completed successfully. Production PyPI has not been updated.
 
 Version [0.2.0a2](https://test.pypi.org/project/Products.SQLUserWizard/0.2.0a2/)
 was published as an alpha on 2026-09-26 through GitHub Actions trusted

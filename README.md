@@ -2,9 +2,9 @@
 
 A Zope product that creates a local SQL-backed PAS installation, with user
 administration, roles, profiles, authenticator 2FA and inherited fallback access.
-Version **0.2.0b1** is a beta candidate under lab verification, not yet published.
-The latest published TestPyPI version remains **0.2.0a2**. The release-tag
-installation examples below apply after the candidate is tagged and published.
+Version **0.2.0b1** is the first beta release and is published on
+[TestPyPI](https://test.pypi.org/project/Products.SQLUserWizard/0.2.0b1/).
+The release-tag installation examples below use the same verified source.
 See [verification status](docs/status.md) for tested environments and remaining
 confirmation work, and [release notes](docs/release-0.2.0b1.md) before upgrading.
 
