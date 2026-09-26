@@ -1149,7 +1149,7 @@ which validates password and optional TOTP before PAS receives credentials.
 
         manifest = {
             "product": "Products.SQLUserWizard",
-            "version": "0.2.0a1",
+            "version": "0.2.0a2",
             "runtime_revision": 2,
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "mode": self.mode,

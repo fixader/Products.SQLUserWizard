@@ -4,7 +4,9 @@ All notable changes to Products.SQLUserWizard are tracked here. The project is
 still in alpha, so entries include lab verification notes when they affect
 install confidence.
 
-## 0.2.0a2 - Unreleased
+## 0.2.0a2 - 2026-09-26
+
+Release candidate under lab verification; not yet published.
 
 - Added opt-in invitation storage and a permission-checked Script (Python) API.
   Ordinary installation and startup do not create invitation tables.
