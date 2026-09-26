@@ -15,16 +15,16 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Download verified 0.2.0b1 release artifacts
+      - name: Download verified 0.2.0b2 release artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir dist
-          gh release download v0.2.0b1 --repo "$GITHUB_REPOSITORY" --dir dist \
-            --pattern 'products_sqluserwizard-0.2.0b1-py3-none-any.whl' \
-            --pattern 'products_sqluserwizard-0.2.0b1.tar.gz'
-          echo '9b1e946c4300bf3bfce07f213f3d0c50e04b09e46f322b6e04b5cb04b4e4fd43  dist/products_sqluserwizard-0.2.0b1-py3-none-any.whl' | sha256sum --check
-          echo '9ca0b3a851c60ad1be095d652f951342d8e1901053f3777a0485c709f30f5b75  dist/products_sqluserwizard-0.2.0b1.tar.gz' | sha256sum --check
+          gh release download v0.2.0b2 --repo "$GITHUB_REPOSITORY" --dir dist \
+            --pattern 'products_sqluserwizard-0.2.0b2-py3-none-any.whl' \
+            --pattern 'products_sqluserwizard-0.2.0b2.tar.gz'
+          echo '56af60dcf1de6b19d31dc3961bad72b762c4353285d6f5f62106f15dee734bc0  dist/products_sqluserwizard-0.2.0b2-py3-none-any.whl' | sha256sum --check
+          echo '4a2da94c2a45931d6d238216e0f7e10a776bf9adec47ed3d50ca7a2d9a6b3b53  dist/products_sqluserwizard-0.2.0b2.tar.gz' | sha256sum --check
       - name: Publish to TestPyPI using trusted publishing
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
         with:
