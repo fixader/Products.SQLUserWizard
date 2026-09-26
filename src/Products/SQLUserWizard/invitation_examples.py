@@ -27,6 +27,11 @@ def _script(container, object_id, title, body, marker, view_roles, proxy_roles=(
         raise ValueError(f"{FOLDER_ID}/{object_id} exists but is not a Script (Python)")
     source = _source(existing)
     if not source or marker in source:
+        # Zope refuses to edit a Script (Python) while it carries a proxy role
+        # the current Manager does not personally hold. Clear only the managed
+        # script's proxy roles during replacement, then restore the reviewed
+        # narrow role below. A failed request aborts the ZODB changes.
+        existing.manage_proxy(())
         existing.ZPythonScript_edit("", body)
         existing.title = title
     existing.manage_permission("View", roles=tuple(view_roles), acquire=0)
@@ -83,10 +88,15 @@ def install_invitation_examples(application, allowed_roles):
     roles_literal = repr(list(allowed_roles))
     _script(invitations, "create_invitation", "Create invitation", f'''# SQLUSERWIZARD-MANAGED-INVITATION-CREATE
 req = context.REQUEST
-return context.sql_user_provisioning.create_invitation(
+result = context.sql_user_provisioning.create_invitation(
     email=req.form.get("email", ""), roles={roles_literal}, REQUEST=req,
     expires_in=86400,
 )
+result["delivery"] = "manual"
+delivery = context.sql_user_provisioning.deliver_invitation_email(
+    result["invitation_id"], result["token"], req.form.get("email", ""), req)
+result.update(delivery)
+return result
 ''', "SQLUSERWIZARD-MANAGED-INVITATION-CREATE", ("Manager",))
     _script(invitations, "inspect_invitation", "Inspect invitation", '''# SQLUSERWIZARD-MANAGED-INVITATION-INSPECT
 req = context.REQUEST
@@ -98,7 +108,7 @@ return context.sql_user_provisioning.inspect_invitation(
 req = context.REQUEST
 result = context.sql_user_provisioning.complete_invitation(
     token=req.form.get("token", ""),
-    user_id=req.form.get("user_id", ""),
+    user_id=req.form.get("login_name", ""),
     login_name=req.form.get("login_name", ""),
     password=req.form.get("password", ""),
     profile={
@@ -109,39 +119,54 @@ result = context.sql_user_provisioning.complete_invitation(
     },
     REQUEST=req,
 )
-return result
+req.RESPONSE.setHeader("Content-Type", "text/html; charset=utf-8")
+return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Account created</title><link rel="stylesheet" href="sql_wizard.css"></head>
+<body class="sqluw-page sqluw-invitation-page"><main class="sqluw-form-shell"><section class="sqluw-form-card">
+<h1>Account created</h1>
+<p>Your account is ready. For security, accepting an invitation does not sign you in automatically.</p>
+<div class="sqluw-form-actions"><a class="button" href="%s">Continue to login</a></div>
+</section></main></body></html>""" % result["login_url"]
 ''', "SQLUSERWIZARD-MANAGED-INVITATION-COMPLETE", ("Anonymous",), (COMPLETER_ROLE,))
 
     _script(invitations, "form", "Accept invitation", '''# SQLUSERWIZARD-MANAGED-INVITATION-FORM
 field = context.sql_user_provisioning.csrf_field(context.REQUEST)
+token = context.REQUEST.form.get("token", "")
 context.REQUEST.RESPONSE.setHeader("Content-Type", "text/html; charset=utf-8")
 return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Accept invitation</title><link rel="stylesheet" href="sql_wizard.css"></head>
 <body class="sqluw-page sqluw-invitation-page"><main class="sqluw-form-shell"><section class="sqluw-form-card">
 <h1>Accept invitation</h1><p class="intro">Create your account using the invitation token you received.</p>
 <form method="post" action="complete_invitation">%s
-<label class="form-field"><span>Invitation token</span><input name="token" autocomplete="off" required></label>
-<label class="form-field"><span>User ID</span><input name="user_id" autocomplete="username" required></label>
-<label class="form-field"><span>Login name</span><input name="login_name" autocomplete="username" required></label>
-<label class="form-field"><span>Password</span><input name="password" type="password" autocomplete="new-password" required></label>
-<label class="form-field"><span>First name</span><input name="first_name" autocomplete="given-name"></label>
-<label class="form-field"><span>Last name</span><input name="last_name" autocomplete="family-name"></label>
-<label class="form-field"><span>Display name</span><input name="display_name"></label>
-<label class="form-field"><span>Mobile</span><input name="mobile" type="tel" autocomplete="tel"></label>
+<label class="form-field"><span>Invitation token</span><input name="token" value="%s" autocomplete="off" title="The one-time token from your invitation email" required></label>
+<label class="form-field"><span>Login name</span><input name="login_name" autocomplete="username" placeholder="For example: rf or rf@bina.no" title="Choose a nickname or use your email address" required>
+<small>Choose a nickname, or simply use your email address. You will enter this when signing in.</small></label>
+<label class="form-field"><span>Password</span><input name="password" type="password" autocomplete="new-password" placeholder="At least 12 characters" title="Use at least 12 characters" minlength="12" required>
+<small>Use at least 12 characters.</small></label>
+<label class="form-field"><span>First name</span><input name="first_name" autocomplete="given-name" placeholder="Your first name"></label>
+<label class="form-field"><span>Last name</span><input name="last_name" autocomplete="family-name" placeholder="Your last name"></label>
+<label class="form-field"><span>Display name</span><input name="display_name" placeholder="The name other users should see" title="This may be your full name or another public display name"></label>
+<label class="form-field"><span>Mobile</span><input name="mobile" type="tel" autocomplete="tel" placeholder="Optional, including country code" title="Optional mobile number, preferably including country code"></label>
 <div class="sqluw-form-actions"><button type="submit">Complete invitation</button></div></form>
-</section></main></body></html>""" % field
+</section></main></body></html>""" % (field, token)
 ''', "SQLUSERWIZARD-MANAGED-INVITATION-FORM", ("Anonymous",))
     _script(invitations, "create_form", "Create invitation", '''# SQLUSERWIZARD-MANAGED-INVITATION-CREATE-FORM
 field = context.sql_user_provisioning.csrf_field(context.REQUEST)
+mailhosts = context.objectValues("Mail Host")
+mail_status = "<p class='notice'>No local MailHost is configured. The invitation token must be delivered manually.</p>"
+if mailhosts and context.getProperty("sqluw_mail_enabled", False):
+    mail_status = "<p class='notice'>The invitation will be sent automatically by the local MailHost.</p>"
+elif mailhosts:
+    mail_status = "<p class='notice'>The local MailHost is disabled for invitations. Deliver the token manually.</p>"
 context.REQUEST.RESPONSE.setHeader("Content-Type", "text/html; charset=utf-8")
 return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Create invitation</title><link rel="stylesheet" href="sql_wizard.css"></head>
 <body class="sqluw-page sqluw-invitation-page"><main class="sqluw-form-shell"><section class="sqluw-form-card">
-<h1>Create invitation</h1><p class="intro">Create a one-time invitation for an ordinary application user.</p>
+<h1>Create invitation</h1><p class="intro">Create a one-time invitation for an ordinary application user.</p>%s
 <form method="post" action="create_invitation">%s
 <label class="form-field"><span>Email</span><input name="email" type="email" autocomplete="email" required></label>
 <div class="sqluw-form-actions"><button type="submit">Create invitation</button></div></form>
-</section></main></body></html>""" % field
+</section></main></body></html>""" % (mail_status, field)
 ''', "SQLUSERWIZARD-MANAGED-INVITATION-CREATE-FORM", ("Manager",))
 
     parent_css = _file_text(application._getOb(STYLESHEET_ID))
@@ -162,6 +187,10 @@ return """<!doctype html><html><head><meta name="viewport" content="width=device
 <li>The recipient completes the public form.</li><li>Acceptance creates the account but does not log the browser in.</li>
 <li>The user logs in normally and completes TOTP enrollment when required.</li>
 <li>Used, expired, revoked, or replayed tokens are rejected.</li></ol>
+<h2>Email delivery</h2><p>Add and configure a MailHost directly in this <code>invitations</code> folder to enable
+automatic delivery from the creation form. Enable it and configure the sender, subject and public invitation URL through
+SQL User Admin. Only local MailHost objects are considered; a MailHost acquired from a parent is deliberately ignored.
+Without an enabled local MailHost, create the invitation and deliver its one-time token manually.</p>
 <h2>Editing</h2><p>The forms may be branded and rearranged. Preserve POST actions, input names and generated CSRF fields.
 Do not grant Manager proxy roles. The local <code>sql_wizard.css</code> shadows the parent stylesheet through Acquisition;
 remove it to inherit the parent file, or edit it for invitation-specific branding.</p></article></main></body></html>'''

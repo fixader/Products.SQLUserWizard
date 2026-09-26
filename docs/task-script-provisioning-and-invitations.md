@@ -454,14 +454,16 @@ Mail delivery is intentionally outside the core database transaction and
 outside PAS authentication.
 
 The wrapper returns the one-time raw token to the authorized invitation-creation
-script. The application builds a link from a configured canonical HTTPS origin
-and sends it through its acquired Zope MailHost. SQLUserWizard must not require
-SMTP, IMAP or POP3 and must not store mailbox credentials.
+script. Manual delivery remains available. Version 0.2.0b1 can also build a link
+from a configured canonical origin and deliver the fixed invitation message
+using settings from a MailHost stored directly in the generated `invitations`
+folder. An acquired parent MailHost is ignored. SQLUserWizard does not create
+the MailHost, bundle SMTP, or manage IMAP/POP3.
 
 Provide an example using MailHost, but keep these responsibilities separate:
 
 - SQLUserWizard: invitation state, token security and provisioning;
-- application script: wording, canonical URL and delivery request;
+- protected controller: fixed wording, canonical URL and narrowly scoped delivery;
 - MailHost/mail service: authenticated SMTP delivery;
 - human mailbox owner: replies received through IMAP or POP3.
 
@@ -494,7 +496,7 @@ Document the supported wrapper API as a real compatibility contract:
 
 Add complete, copyable examples for an `/ordersystem/invitations` folder:
 
-- create and send an invitation through an acquired MailHost;
+- create and send an invitation through an explicitly enabled local MailHost;
 - list pending invitations;
 - revoke and rotate an invitation;
 - render token acceptance;
@@ -539,7 +541,7 @@ another live installation without an explicit release/deployment decision.
 
 ## Out of scope
 
-- Sending or receiving email inside SQLUserWizard.
+- General-purpose email sending or receiving inside SQLUserWizard.
 - SMTP account management, IMAP/POP3 processing, SPF, DKIM or DMARC setup.
 - SMS provider integration.
 - Open public self-registration without an invitation.

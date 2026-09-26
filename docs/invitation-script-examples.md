@@ -1,8 +1,8 @@
 # Application-owned invitation scripts
 
-These examples use the optional core API directly. No invitation workflow add-on
-or mail server is required. They are a starting point for a controlled manual
-test, not a complete enrollment user interface.
+These examples use the optional core API directly. No separate workflow add-on
+is required. Manual delivery works without a mail server; an enabled MailHost
+stored directly in the generated folder adds automatic delivery.
 
 First enable invitation storage from **SQL User Admin > Invitations**, allowing
 the ordinary `Member` role. SQLUserWizard now creates the `invitations` child
@@ -18,18 +18,24 @@ acquisition. Do not assign a proxy role. The current manager must have the core
 
 ```python
 req = context.REQUEST
-return context.sql_user_provisioning.create_invitation(
+result = context.sql_user_provisioning.create_invitation(
     email=req.form.get('email', ''),
     roles=['Member'],
     REQUEST=req,
     expires_in=86400,
 )
+result.update(context.sql_user_provisioning.deliver_invitation_email(
+    result['invitation_id'], result['token'], req.form.get('email', ''), req,
+))
+return result
 ```
 
 Call it from a manager-only POST form containing the controller's CSRF field.
-The result includes a raw token exactly once. Present it only to the authorized
-manager for controlled delivery; do not log it or save it in template properties.
-The example deliberately fixes the role in reviewed code.
+The result includes a raw token exactly once. Automatic delivery uses only the
+local MailHost and fixed Manager configuration. When delivery is unavailable or
+fails, present the token only to the authorized Manager for controlled manual
+delivery; do not log it or save it in template properties. The example fixes
+the role in reviewed code.
 
 ## Inspect an invitation
 
@@ -60,7 +66,7 @@ Manager as a proxy role to either public script.
 req = context.REQUEST
 return context.sql_user_provisioning.complete_invitation(
     token=req.form.get('token', ''),
-    user_id=req.form.get('user_id', ''),
+    user_id=req.form.get('login_name', ''),
     login_name=req.form.get('login_name', ''),
     password=req.form.get('password', ''),
     profile={
@@ -95,5 +101,6 @@ catching such a failure. Finish creation/completion requests without further SQL
 Explicit transaction boundaries are documented in the
 [API reference](invitation-api.md#transaction-boundary-and-remaining-verification).
 
-The generated example provides minimal pages and permission setup. Mail
-delivery remains application-owned and uses these same controller methods.
+The generated example provides complete minimal pages, permission setup and
+optional local-MailHost delivery. Applications may customize presentation and
+wording while preserving the reviewed permission and CSRF boundaries.

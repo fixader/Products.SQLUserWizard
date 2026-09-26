@@ -1,4 +1,4 @@
-name: Publish alpha to TestPyPI
+name: Publish prerelease to TestPyPI
 
 on:
   workflow_dispatch:
@@ -15,16 +15,16 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Download verified 0.2.0a3 release artifacts
+      - name: Download verified 0.2.0b1 release artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir dist
-          gh release download v0.2.0a3 --repo "$GITHUB_REPOSITORY" --dir dist \
-            --pattern 'products_sqluserwizard-0.2.0a3-py3-none-any.whl' \
-            --pattern 'products_sqluserwizard-0.2.0a3.tar.gz'
-          echo 'c8f3e49907204ef5afa14540568f14486719b535adaea685b10de0805bf4b4b9  dist/products_sqluserwizard-0.2.0a3-py3-none-any.whl' | sha256sum --check
-          echo 'c8a985408fafa8261faa7bb89809d3acb52046106fd1d05cbb509e0e2d619d02  dist/products_sqluserwizard-0.2.0a3.tar.gz' | sha256sum --check
+          gh release download v0.2.0b1 --repo "$GITHUB_REPOSITORY" --dir dist \
+            --pattern 'products_sqluserwizard-0.2.0b1-py3-none-any.whl' \
+            --pattern 'products_sqluserwizard-0.2.0b1.tar.gz'
+          echo '9b1e946c4300bf3bfce07f213f3d0c50e04b09e46f322b6e04b5cb04b4e4fd43  dist/products_sqluserwizard-0.2.0b1-py3-none-any.whl' | sha256sum --check
+          echo '9ca0b3a851c60ad1be095d652f951342d8e1901053f3777a0485c709f30f5b75  dist/products_sqluserwizard-0.2.0b1.tar.gz' | sha256sum --check
       - name: Publish to TestPyPI using trusted publishing
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
         with:

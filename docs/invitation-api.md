@@ -1,8 +1,7 @@
 # Invitation API
 
-This API is included in the published `0.2.0a2` alpha. The optional workflow
-product is described
-[separately](task-optional-invitation-product.md).
+The core API was introduced in `0.2.0a2`. Version `0.2.0b1` adds the generated
+forms and optional MailHost-backed delivery described below.
 
 ## Explicit setup
 
@@ -18,8 +17,9 @@ managed identity SQL must match the expected contract before enablement;
 customizations require review. Repeated storage repair preserves records and
 rejects silently changed policy or SQL.
 
-See [application Script (Python) examples](invitation-script-examples.md) for a
-manual creation, inspection and completion flow.
+Enabling invitations also creates a working `invitations` child folder with
+creation, inspection and completion wrappers, forms, narrow proxy roles, local
+CSS and Manager notes. See [application Script (Python) examples](invitation-script-examples.md).
 
 ## Application scripts and permissions
 
@@ -33,7 +33,7 @@ Its internal helpers and configuration are not a RestrictedPython API.
 
 | Operation | Required permission | Request |
 | --- | --- | --- |
-| `create_invitation`, `rotate_invitation_secret`, `revoke_invitation`, `record_delivery` | SQLUserWizard: Administer invitations | POST with controller CSRF token |
+| `create_invitation`, `rotate_invitation_secret`, `revoke_invitation`, `record_delivery`, `deliver_invitation_email` | SQLUserWizard: Administer invitations | POST with controller CSRF token |
 | `list_invitations` | SQLUserWizard: Administer invitations | Request required |
 | `inspect_invitation` | SQLUserWizard: Inspect invitations | Request required; throttled |
 | `complete_invitation` | SQLUserWizard: Complete invitations | POST with controller CSRF token; throttled |
@@ -50,7 +50,8 @@ These two role names are explicitly forbidden as invitation assignments.
 Zope 6.1 integration tests verify acquisition from a child folder, denied access
 without a proxy role, inspection and completion with narrow proxy roles, and
 absence of controller acquisition from a sibling application. Zope 5 confirmation
-is still pending. Template and script installation is not yet automated.
+is still pending. Template and script installation is automated when invitations
+are enabled.
 
 ## Current signatures and results
 
@@ -68,6 +69,7 @@ list_invitations(REQUEST)
 rotate_invitation_secret(invitation_id, REQUEST)
 revoke_invitation(invitation_id, REQUEST)
 record_delivery(invitation_id, channel, result, REQUEST)
+deliver_invitation_email(invitation_id, token, recipient, REQUEST)
 complete_invitation(token, user_id, login_name, password, profile, REQUEST)
 ```
 
@@ -82,6 +84,12 @@ complete_invitation(token, user_id, login_name, password, profile, REQUEST)
 - Revocation returns a `revoked` boolean. Delivery status returns `recorded=True`.
   Channels are `manual` or `email`; results are `pending`, `sent` or `failed`.
   Delivery status does not itself send a message or invalidate an invitation.
+- Generated creation wrappers call `deliver_invitation_email`. It considers
+  only a MailHost stored directly in the generated `invitations` folder and
+  only when a Manager has enabled delivery and supplied a fixed sender, subject
+  and canonical invitation URL. It returns `manual`, `sent` or `failed`.
+  Delivery events go to the Zope server log without the token, full link,
+  message body or SMTP password.
 - Completion requires a password of 12-1024 characters. Allowed profile keys
   are `first_name`, `last_name`, `display_name` and `mobile`; email comes from the
   invitation. Approved roles also come exclusively from stored invitation state.
@@ -145,9 +153,11 @@ across ZODB and multiple databases, nor a guarantee against an ambiguous result
 if the connection fails during physical commit. Do not blindly retry account
 creation after such a failure; inspect state in a new request first.
 
-Chapter 4 HTTP invitation/login/TOTP/fallback verification passed on Plone 6.2.2
-and Zope 6.2. Live invitation verification on other database families, visual
-browser usability and Zope 5 wrapper confirmation remain pending. The SQL workflow is shared;
+Chapter 4 HTTP invitation/login/optional-TOTP/fallback verification passed on
+Plone 6.2.2 and Zope 6.2. The same lab sent a real invitation using a local
+MailHost configured for authenticated SMTP with STARTTLS. Live invitation
+verification on other database families and Zope 5 wrapper confirmation remain
+pending. The SQL workflow is shared;
 that alone does not establish live compatibility on every driver or storage engine.
 
 ## Attempt limits

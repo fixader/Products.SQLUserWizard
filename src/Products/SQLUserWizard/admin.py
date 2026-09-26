@@ -1,6 +1,6 @@
 from html import escape
 from types import SimpleNamespace
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from AccessControl import ClassSecurityInfo
 from AccessControl import getSecurityManager
@@ -169,10 +169,76 @@ class SQLUserAdmin(SimpleItem):
                 totp_required=REQUEST.form.get("totp_required") == "1")
             message = "Invitation storage and API are enabled."
         controller = folder._getOb(CONTROLLER_ID, None)
+        invitations = folder._getOb("invitations", None)
+        if (controller is not None and invitations is not None and REQUEST is not None
+                and REQUEST.form.get("save_invitation_mail")):
+            require_post(self, REQUEST)
+            enabled = REQUEST.form.get("mail_enabled") == "1"
+            sender = REQUEST.form.get("mail_from", "").strip()
+            subject = REQUEST.form.get("mail_subject", "").strip()
+            invitation_url = REQUEST.form.get("invitation_url", "").strip().rstrip("/")
+            if enabled:
+                if (not sender or "@" not in sender or "\r" in sender or "\n" in sender):
+                    raise ValueError("A valid invitation sender address is required")
+                if not subject or "\r" in subject or "\n" in subject:
+                    raise ValueError("A valid invitation subject is required")
+                parsed = urlsplit(invitation_url)
+                if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                    raise ValueError("An absolute HTTP(S) invitation form URL is required")
+            properties = {
+                "sqluw_mail_enabled": enabled,
+                "sqluw_mail_from": sender,
+                "sqluw_mail_subject": subject,
+                "sqluw_invitation_url": invitation_url,
+            }
+            for name, value in properties.items():
+                if invitations.hasProperty(name):
+                    invitations._updateProperty(name, value)
+                else:
+                    invitations._setProperty(name, value, "boolean" if isinstance(value, bool) else "string")
+            message = "Invitation email settings were saved."
+        if (controller is not None and REQUEST is not None
+                and REQUEST.form.get("save_invitation_policy")):
+            require_post(self, REQUEST)
+            controller.totp_required = REQUEST.form.get("totp_required") == "1"
+            message = "Invitation enrollment policy was saved."
+        if (controller is not None and REQUEST is not None
+                and REQUEST.form.get("repair_invitation_examples")):
+            require_post(self, REQUEST)
+            from .invitation_examples import install_invitation_examples
+            install_invitation_examples(folder, controller.allowed_roles)
+            message = "Invitation forms and scripts were repaired. Customized managed objects were preserved."
         if controller is not None:
-            return ("<h1>Invitations</h1><p>" + escape(message or "Invitation storage and API are enabled.")
-                    + "</p><p>Use authorized application scripts to call sql_user_provisioning. "
-                    "No public invitation pages or mail delivery have been installed.</p>")
+            mailhosts = invitations.objectValues("Mail Host") if invitations is not None else ()
+            mail_enabled = bool(invitations and invitations.getProperty("sqluw_mail_enabled", False))
+            mail_status = ("Automatic invitation email is active."
+                           if mailhosts and mail_enabled else
+                           "A local MailHost exists, but automatic invitation email is disabled."
+                           if mailhosts else
+                           "No local MailHost is configured; invitations use manual delivery.")
+            checked = " checked" if mail_enabled else ""
+            mail_from = escape(invitations.getProperty("sqluw_mail_from", "") if invitations else "")
+            mail_subject = escape(invitations.getProperty(
+                "sqluw_mail_subject", "Your account invitation") if invitations else "")
+            invitation_url = escape(invitations.getProperty(
+                "sqluw_invitation_url", "") if invitations else "")
+            totp_checked = " checked" if controller.totp_required else ""
+            html = ("<h1>Invitations</h1><p>" + escape(message or "Invitation storage and API are enabled.")
+                    + "</p><p>" + escape(mail_status) + "</p>"
+                    '<form method="post"><h2>Enrollment policy</h2>'
+                    '<label><input name="totp_required" type="checkbox" value="1"' + totp_checked
+                    + "> Require invited users to enroll in two-factor authentication</label><br>"
+                    '<button name="save_invitation_policy" value="1">Save enrollment policy</button></form>'
+                    '<form method="post"><h2>Email delivery</h2>'
+                    '<label><input name="mail_enabled" type="checkbox" value="1"' + checked
+                    + "> Send new invitations automatically</label><br>"
+                    '<label>Sender address <input name="mail_from" type="email" value="' + mail_from
+                    + '"></label><br><label>Subject <input name="mail_subject" value="' + mail_subject
+                    + '"></label><br><label>Public invitation form URL <input name="invitation_url" type="url" value="'
+                    + invitation_url + '"></label><br><button name="save_invitation_mail" value="1">Save email settings</button></form>'
+                    '<form method="post"><button name="repair_invitation_examples" value="1">'
+                    "Repair invitation forms and scripts</button></form>")
+            return protect_forms(self, REQUEST, html)
         html = '''<h1>Enable invitations</h1>
 <p>This optional action creates two invitation tables and a protected API controller.
 Ordinary installation and startup do not create invitation storage.</p>

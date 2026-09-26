@@ -1,11 +1,61 @@
 import pytest
 import transaction
+from AccessControl import ClassSecurityInfo
 from AccessControl.SecurityManagement import noSecurityManager
+from OFS.SimpleItem import SimpleItem
 from Shared.DC.ZRDB.TM import TM
 from zExceptions import Forbidden, Unauthorized
 
 from Products.SQLUserWizard.invitation_install import enable_invitation_storage
+from Products.SQLUserWizard.compat import InitializeClass
 from test_integration import app_folder, installed, post, request, SQLiteConnection
+
+
+class DummyMailHost(SimpleItem):
+    meta_type = "Mail Host"
+    security = ClassSecurityInfo()
+
+    def __init__(self, object_id):
+        self.id = object_id
+        self.messages = []
+        self.smtp_host = "smtp.example.invalid"
+        self.smtp_port = 587
+        self.smtp_uid = "smtp-user"
+        self.smtp_pwd = "smtp-password"
+        self.force_tls = True
+        self.implicit_tls = False
+
+    security.declarePublic("send")
+    def send(self, body, **headers):
+        self.messages.append((body, headers))
+
+
+InitializeClass(DummyMailHost)
+
+
+class DummySMTP:
+    messages = []
+
+    def __init__(self, **settings):
+        self.settings = settings
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *unused):
+        return False
+
+    def ehlo(self):
+        pass
+
+    def starttls(self, **unused):
+        pass
+
+    def login(self, username, password):
+        self.credentials = (username, password)
+
+    def send_message(self, message, **routing):
+        self.messages.append((message, routing))
 
 
 @pytest.fixture(autouse=True)
@@ -41,6 +91,54 @@ def test_lifecycle_and_sanitized_inspection(provisioning):
     assert provisioning.inspect_invitation(rotated["token"], request())["valid"]
     assert provisioning.revoke_invitation(invitation["invitation_id"], post(provisioning, {}))["revoked"]
     assert not provisioning.inspect_invitation(rotated["token"], request())["valid"]
+
+
+def test_generated_create_script_only_uses_local_mailhost_and_logs_delivery(
+        transactional, caplog, monkeypatch):
+    controller, resource = transactional
+    DummySMTP.messages = []
+    monkeypatch.setattr("Products.SQLUserWizard.provisioning.smtplib.SMTP", DummySMTP)
+    invitations = controller.aq_parent.invitations
+    invitations._setObject("local_mail", DummyMailHost("local_mail"))
+    invitations._setProperty("sqluw_mail_enabled", True, "boolean")
+    invitations._setProperty("sqluw_mail_from", "sender@example.invalid", "string")
+    invitations._setProperty("sqluw_mail_subject", "Account invitation", "string")
+    invitations._setProperty("sqluw_invitation_url",
+                             "https://accounts.example.invalid/invitations/form", "string")
+    invitations.REQUEST = post(controller, {
+        "email": "recipient@example.invalid",
+    })
+    with caplog.at_level("INFO", logger="Products.SQLUserWizard.invitations"):
+        result = invitations.create_invitation()
+    assert result["delivery"] == "sent"
+    message, routing = DummySMTP.messages[0]
+    assert result["token"] in message.get_content()
+    assert routing["to_addrs"] == ["recipient@example.invalid"]
+    assert routing["from_addr"] == "sender@example.invalid"
+    assert result["token"] not in caplog.text
+    assert "recipient@example.invalid" in caplog.text
+    row = resource.db.execute(
+        "select delivery_channel, delivery_result from pas_invitations where invitation_id=?",
+        (result["invitation_id"],)).fetchone()
+    assert row == (None, None)
+
+
+def test_generated_create_script_ignores_acquired_parent_mailhost(transactional):
+    controller, unused = transactional
+    application = controller.aq_parent
+    application._setObject("parent_mail", DummyMailHost("parent_mail"))
+    invitations = application.invitations
+    invitations._setProperty("sqluw_mail_enabled", True, "boolean")
+    invitations._setProperty("sqluw_mail_from", "sender@example.invalid", "string")
+    invitations._setProperty("sqluw_mail_subject", "Account invitation", "string")
+    invitations._setProperty("sqluw_invitation_url",
+                             "https://accounts.example.invalid/invitations/form", "string")
+    invitations.REQUEST = post(controller, {
+        "email": "recipient@example.invalid",
+    })
+    result = invitations.create_invitation()
+    assert result["delivery"] == "manual"
+    assert application.parent_mail.messages == []
 
 
 @pytest.mark.parametrize("role", ["Manager", "Owner", "Anonymous", "Authenticated", "manager", "Other"])

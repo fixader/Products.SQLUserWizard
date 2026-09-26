@@ -90,6 +90,9 @@ def test_setup_page_only_enables_after_protected_post(installed):
     assert "enabled" in admin.manage_invitations(post(admin, data))
     assert installed.sql_user_provisioning.totp_required
     assert installed.sql_user_provisioning.privileged_roles == ("SiteAdmin",)
+    policy = post(admin, {"save_invitation_policy": "1"})
+    assert "policy was saved" in admin.manage_invitations(policy)
+    assert not installed.sql_user_provisioning.totp_required
 
 
 def test_plone_rejection_precedes_invitation_ddl(installed, monkeypatch):

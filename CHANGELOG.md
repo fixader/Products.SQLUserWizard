@@ -1,10 +1,10 @@
 # Changelog
 
 All notable changes to Products.SQLUserWizard are tracked here. The project is
-still in alpha, so entries include lab verification notes when they affect
+still pre-release, so entries include lab verification notes when they affect
 install confidence.
 
-## 0.2.0a3 - 2026-09-26
+## 0.2.0b1 - 2026-09-26
 
 - Added a Manager-only profile field editor with validated text, email, phone,
   URL, textarea, checkbox, and select fields. Extra values are stored in the
@@ -22,6 +22,15 @@ install confidence.
   calls blocked while allowing Managers to traverse and administer the objects.
 - Install / Repair applies the corrected permission to existing generated
   identity, profile and invitation methods.
+- Added optional invitation email delivery through a MailHost stored directly
+  in the generated invitations folder, with Manager-controlled sender, subject,
+  public URL and TOTP policy. Delivery events omit tokens, message bodies and
+  SMTP credentials from the server log.
+- Simplified invitation acceptance to one login name, added field guidance and
+  replaced the raw completion result with an account-created page leading to
+  normal login.
+- Repair can safely update managed scripts that already carry narrow proxy
+  roles by clearing and restoring those roles around source replacement.
 
 ## 0.2.0a2 - 2026-09-26
 
