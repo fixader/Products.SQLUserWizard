@@ -127,6 +127,9 @@ was published as the first beta on 2026-09-26 through GitHub Actions trusted
 publishing. The published wheel and source archive SHA-256 hashes match the
 GitHub prerelease assets. A clean virtual environment installed the exact beta
 wheel from the TestPyPI simple index and reported the beta package metadata.
+The same TestPyPI wheel replaced the development candidate on the Plone 6.2.2
+chapter lab; the service restarted successfully and the application management
+endpoint responded with its expected login redirect.
 The [publication run](https://github.com/fixader/Products.SQLUserWizard/actions/runs/36229162555)
 completed successfully. Production PyPI has not been updated.
 
