@@ -105,7 +105,10 @@ changes without data or schema mutation. Chapter 4 verification remains pending.
   remain in the existing protected local storage; do not request them again or
   copy them into Git. Read-only inspection confirmed an active Plone service,
   SQLUserWizard 0.2.0a1, OpenODBCDA 1.0.2, Zope 6.2 and Plone 6.2.2. The target
-  adapter still needs updating before testing the new invitation workflow.
+  adapter has since been updated to 1.1.1 from PyPI with dependencies unchanged.
+  Plone was restarted successfully; the service is active and the local HTTP
+  endpoint returns 200. All three explicit transaction methods import correctly.
+  SQLUserWizard remains at 0.2.0a1 pending candidate installation.
   Do not record the earlier isolated SQL tests as this deployment.
 
 ### Script permissions and setup checkpoint
