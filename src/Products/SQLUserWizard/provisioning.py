@@ -81,6 +81,7 @@ class SQLUserProvisioning(SimpleItem):
     security = ClassSecurityInfo()
     security.declareObjectPublic()
     security.setDefaultAccess(False)
+    security.declarePublic("meta_type")
     security.setPermissionDefault(ADMINISTER, ("Manager",))
     security.setPermissionDefault(COMPLETE, ("Manager",))
     security.setPermissionDefault(INSPECT, ("Manager",))

@@ -62,6 +62,14 @@ def test_permission_csrf_and_direct_traversal(provisioning):
         provisioning.list_invitations(request())
 
 
+def test_zmi_permission_edit_renders_and_preserves_role_mapping(provisioning):
+    from AccessControl.PermissionRole import rolesForPermissionOn
+    from Products.SQLUserWizard.provisioning import INSPECT
+    provisioning.aq_parent._addRole("InvitationInspector")
+    provisioning.manage_role("InvitationInspector", permissions=[INSPECT], REQUEST=request())
+    assert "InvitationInspector" in rolesForPermissionOn(INSPECT, provisioning)
+
+
 def test_completion_refuses_nontransactional_adapter(provisioning, monkeypatch):
     invitation = create(provisioning)
     monkeypatch.setattr(SQLiteConnection, "__call__", lambda self: self)
