@@ -4,6 +4,26 @@ All notable changes to Products.SQLUserWizard are tracked here. The project is
 still in alpha, so entries include lab verification notes when they affect
 install confidence.
 
+## 0.2.0a2 - 2026-09-26
+
+Alpha release verified in the chapter 4 lab.
+
+- Added opt-in invitation storage and a permission-checked Script (Python) API.
+  Ordinary installation and startup do not create invitation tables.
+- Added explicit setup, role restrictions, expiring hashed tokens, rotation,
+  revocation, sanitized inspection and normal login/TOTP after completion.
+- Invitation creation and completion share a transaction-based SQL workflow.
+  Verified OpenODBCDA 1.1.1 explicit begin/commit-request/rollback integration,
+  including rollback after a later request abort. Removed the development-only
+  PostgreSQL single-statement workaround; other adapters must participate in
+  Zope transactions before writing.
+- Fixed initial CSRF key persistence under Plone GET-write protection and checked
+  Plone form authenticators before SQL changes. Neither CSRF layer is disabled.
+- Fixed provisioning ZMI permission editing so role updates survive response
+  rendering. Full chapter 4 HTTP invitation/login/TOTP/fallback tests passed.
+- Invitation attempt limits survive aborted requests; limits are per worker.
+- Added application-script examples and a separate optional workflow-product design.
+
 ## 0.2.0a1 - 2026-09-25
 
 ### Changed

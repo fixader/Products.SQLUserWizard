@@ -2,6 +2,173 @@
 
 Created: 2026-09-25
 
+## Agreed product boundary
+
+Implement the invitation API inside SQLUserWizard first. It must be usable
+directly from authorized application Script (Python) objects without any add-on.
+Invitation storage is always explicitly enabled; neither ordinary installation
+nor startup creates it. A future optional product will supply ready-made pages,
+templates and delivery orchestration using this same API. Its living design is
+in [Optional invitation workflow product](task-optional-invitation-product.md).
+
+## Implementation status
+
+### Chapter 4 release gate
+
+The user confirmed the Plone Order System case-study server at `192.168.0.74`
+as the integration-test target. OpenODBCDA 1.1.1 now supplies explicit transactions
+that reserve one connection and coordinate the commit request with Zope.
+
+The user explicitly requested removing the older-adapter compatibility path.
+The PostgreSQL-specific single-statement module and templates have therefore been
+removed. Creation and completion now share the multi-statement workflow across
+dialects. SQLUserWizard owns begin/commit-request/rollback on adapters exposing
+the explicit API. Other adapters must actually participate in the current Zope
+transaction; unsupported autocommit connections are refused before writing.
+
+Verified on 2026-09-26: seven live tests passed with the published OpenODBCDA 1.1.1
+wheel on lab `192.168.0.12`, using the real connector, Z SQL Methods and production
+controller workflow against a disposable PostgreSQL database. This includes
+failure at every write stage, creation rollback, duplicate identity rejection,
+four concurrent completions, and a request abort after commit was requested.
+The latter rolled back both the identity and invitation consumption and allowed
+a later successful retry. The test database and role were removed afterward.
+
+The previous six OpenODBCDA 1.0.2 single-statement tests are superseded evidence
+for the removed implementation. They are not the current transaction contract.
+See the [API transaction boundary](invitation-api.md#transaction-boundary-and-remaining-verification)
+for request ownership, no further SQL after commit request, and commit-time limits.
+
+The chapter 4 HTTP workflow has now passed, as recorded below. Remaining release
+work is final distribution verification, consolidation with main and alpha publication.
+Invitation workflows on other database/adapter combinations are not yet verified;
+this does not narrow the existing managed authentication compatibility scope.
+
+The case-study chapter now describes the verified normal login/TOTP flow after
+acceptance and records the HTTP verification. Acceptance alone does not issue an
+authenticated browser session.
+
+Work is in progress on `feature/invitations`; the published `v0.2.0a1`
+artifacts remain unchanged. The feature is implemented on the development branch
+and the 0.2.0a2 candidate has been deployed to the chapter 4 application.
+
+First checkpoint implements the private SQL contract in `invitation_sql.py`:
+
+- Separate `pas_invitations` and `pas_invitation_roles` tables; the existing
+  four-table identity mapping is unchanged.
+- Portable normalized role assignments and integer UTC epoch timestamps.
+- Validated identifiers, including collisions with identity table names.
+- Explicit CREATE statements, without silently accepting pre-existing tables.
+- Typed SQL parameters for creation, lookup, listing, rotation, revocation,
+  delivery status, conditional claim and consumption.
+- A per-completion nonce identifies the successful claim without relying on
+  adapter-specific update row counts in the eventual controller.
+- MySQL schema explicitly uses InnoDB for transactional storage.
+- Tests render all six dialects and execute the state transitions and rollback
+  on SQLite. A two-connection concurrent SQLite test permits exactly one claim.
+
+Explicit storage enablement and the controller are now implemented as work in
+progress. Enablement checks catalog collisions and managed ownership, preserves
+the four-table mapping, and refuses customized SQL. Normal manifest refresh
+preserves the optional invitation ownership record.
+
+The controller includes create, inspect, list, rotate, revoke, delivery-status
+and completion operations. It restricts roles, validates requests and uses a
+strict user insert before the shared profile/role helper. Completion rejects
+adapters lacking supported transaction participation and dooms failed transactions.
+The shared workflow uses the new explicit adapter API where available.
+
+Current local result: 169 tests pass. Browser setup and proxy-role integration
+are implemented. The transactional SQLite tests verify rollback through Zope;
+the separate live PostgreSQL harness verifies the explicit adapter transaction boundary.
+Documented creation, inspection and completion Script (Python) bodies now execute
+in integration tests. Repair tests cover missing methods and refusal of policy
+changes without data or schema mutation. Chapter 4 HTTP verification is recorded above.
+
+### Chapter 4 HTTP verification completed, 2026-09-26
+
+Installed candidate `0.2.0a2` from commit
+`2a198ad01e67c54bb5e6478b20363d6b3a8ca4db` on `192.168.0.74`, with
+OpenODBCDA 1.1.1, Plone 6.2.2, Zope 6.2 and PostgreSQL. The service is active and
+returns HTTP 200 after restart. No TestPyPI publication has occurred yet.
+
+Backups of ZODB, blobs and the initially empty `ordersystem` database are stored
+on that server under `/srv/plone/backups/sqluw-before-invitations`. The existing
+`ordersystem/orders_db` connector was reused. The wizard installed the four
+managed identity tables; invitation storage was enabled explicitly afterward.
+
+Actual HTTP tests passed for wizard/setup POSTs, manager invitation creation,
+anonymous inspection through a narrow proxy role, missing-CSRF rejection before
+user creation, completion with only Member and required TOTP, absence of an
+authenticated session immediately after acceptance, rejected replay, normal
+password login, TOTP enrollment, protected-page access and fallback administration.
+The test generated the authenticator code from the test identity's stored secret;
+it did not involve a human scanning the QR code with a phone. The checks used
+HTTP clients through the real publisher, not a visual browser usability review.
+
+The HTTP tests found and fixed issues missed by the earlier database tests:
+
+- Initial CSRF keys must survive Plone's GET-write protection. Only initial key
+  creation is marked as a safe write; Plone protection remains active.
+- Both SQLUserWizard and Plone form tokens are rendered and validated before
+  SQL writes. Previously Plone could reject ZODB storage after invitation DDL.
+- Provisioning management views use standard traversal and expose the harmless
+  `meta_type` field required by the ZMI permissions template. Previously role
+  updates rolled back when that template failed to render.
+- Removed stale wizard help text referring to the deleted auth-only mode.
+
+The two empty invitation tables from the failed activation attempt were moved
+into the `sqluw_failed_setup` schema for diagnosis. Active tables are in `public`;
+no existing user data was imported or removed. The temporary test administrator
+was removed from both user stores, script ownership transferred to the existing
+administrator, the test SQL identity disabled, and test sessions and abandoned
+invitations revoked. Minimal application-owned example forms/scripts remain in
+`/ordersystem/invitations`; these are not the future optional workflow product.
+The additional fallback account remains available; its generated password is in
+the protected server-local test credential record, never in Git.
+
+The final restart check confirmed anonymous inspection and fallback management
+still work after cleanup. Regression coverage now totals 169 local tests.
+
+### Release preparation checkpoint, 2026-09-26
+
+- Fixed invitation throttling so aborted requests cannot undo attempt counters.
+  Counters are bounded, process-local and shared across connection instances;
+  public multi-worker deployments need a shared ingress limit.
+- Non-PostgreSQL creation now checks transaction participation before its first
+  write, matching completion's refusal of non-transactional adapters.
+- Added and executed [application script examples](invitation-script-examples.md).
+- Added repair tests for missing SQL methods, preservation of data/schema and
+  rejection of silent policy changes.
+- Candidate metadata now identifies `0.2.0a2`; publication is pending. Published
+  TestPyPI artifacts still identify `0.2.0a1`.
+- Chapter 4 access has been recovered and verified using the existing local
+  `~/.codex/scripts/invoke-ordersystemlab-sudo.ps1` helper (its RemoteScriptPath
+  parameter accepts a local UTF-8 shell script with LF line endings). Credentials
+  remain in the existing protected local storage; do not request them again or
+  copy them into Git. Read-only inspection confirmed an active Plone service,
+  SQLUserWizard 0.2.0a1, OpenODBCDA 1.0.2, Zope 6.2 and Plone 6.2.2. The target
+  adapter has since been updated to 1.1.1 from PyPI with dependencies unchanged.
+  Plone was restarted successfully; the service is active and the local HTTP
+  endpoint returns 200. All three explicit transaction methods import correctly.
+  SQLUserWizard has since been updated to the tested 0.2.0a2 candidate above.
+  Do not record the earlier isolated SQL tests as this deployment.
+
+### Script permissions and setup checkpoint
+
+- Added the explicit Invitations setup tab to SQL User Admin. Its POST/CSRF
+  checks prevent GET or unprotected activation; ordinary installation remains unchanged.
+- Actual Script (Python) tests now verify inspection and completion with narrowly
+  mapped proxy roles, denial without permission, inaccessible private helpers,
+  and lack of controller acquisition from a sibling application.
+- Controller storage resolution uses its physical application even when acquired
+  from a child script. Inspection/completion proxy roles cannot be granted by invites.
+- Added [development API documentation](invitation-api.md). Zope 5 wrapper
+  confirmation and complete application examples remain pending.
+
+No server changes or publication are part of this checkpoint. Package version
+selection remains pending until the feature's compatibility scope is finalized.
+
 ## Starting state
 
 - Repository: `https://github.com/fixader/Products.SQLUserWizard`

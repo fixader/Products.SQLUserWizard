@@ -54,8 +54,53 @@ class SQLUserAdmin(SimpleItem):
 
     manage_options = (
         {"label": "Users", "action": "manage_main"},
+        {"label": "Invitations", "action": "manage_invitations"},
         {"label": "Security", "action": "manage_access"},
     )
+
+    security.declareProtected(manage_users, "manage_invitations")
+
+    def manage_invitations(self, REQUEST=None):
+        """Explicitly enable invitation storage and its script-facing controller."""
+        if REQUEST is not None:
+            REQUEST.RESPONSE.setHeader("Content-Type", "text/html; charset=utf-8")
+        from .invitation_install import enable_invitation_storage
+        from .sqladmin import normalize_roles
+        from .invitation_sql import DEFAULT_INVITATION_TABLES
+        from .provisioning import CONTROLLER_ID
+        if not getSecurityManager().checkPermission(manage_users, self):
+            raise Unauthorized("Manage users permission is required")
+        folder = self.aq_parent
+        message = ""
+        if REQUEST is not None and REQUEST.form.get("enable_invitations"):
+            require_post(self, REQUEST)
+            # Errors propagate so the publisher aborts the ZODB transaction.
+            enable_invitation_storage(folder, tables={
+                "invitations": REQUEST.form.get("invitations_table", ""),
+                "roles": REQUEST.form.get("invitation_roles_table", ""),
+            }, allowed_roles=normalize_roles(REQUEST.form.get("allowed_roles", "")),
+                privileged_roles=normalize_roles(REQUEST.form.get("privileged_roles", "")),
+                totp_required=REQUEST.form.get("totp_required") == "1")
+            message = "Invitation storage and API are enabled."
+        controller = folder._getOb(CONTROLLER_ID, None)
+        if controller is not None:
+            return ("<h1>Invitations</h1><p>" + escape(message or "Invitation storage and API are enabled.")
+                    + "</p><p>Use authorized application scripts to call sql_user_provisioning. "
+                    "No public invitation pages or mail delivery have been installed.</p>")
+        html = '''<h1>Enable invitations</h1>
+<p>This optional action creates two invitation tables and a protected API controller.
+Ordinary installation and startup do not create invitation storage.</p>
+<form method="post">
+<label>Invitation table <input name="invitations_table" value="%s"></label><br>
+<label>Invitation roles table <input name="invitation_roles_table" value="%s"></label><br>
+<label>Allowed ordinary roles <input name="allowed_roles" value="Member"></label><br>
+<label>Additional privileged roles to reject <input name="privileged_roles" value=""></label><br>
+<label><input type="checkbox" name="totp_required" value="1">Require TOTP enrollment</label><br>
+<p>Include application-specific privileged roles in the rejection list.
+SMTP and ready-made invitation pages are optional application concerns.</p>
+<button name="enable_invitations" value="1">Enable invitations</button>
+</form>''' % (DEFAULT_INVITATION_TABLES["invitations"], DEFAULT_INVITATION_TABLES["roles"])
+        return protect_forms(self, REQUEST, html)
 
     security.declareProtected(manage_users, "manage_main")
 

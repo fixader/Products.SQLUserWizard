@@ -47,6 +47,15 @@ def _key(obj):
     key = getattr(aq_base(obj), "_csrf_key", None)
     if key is None:
         obj._csrf_key = key = secrets.token_bytes(32)
+        # Plone can abort writes made while rendering a GET form. Persist only
+        # this controller's initial CSRF key so the following POST can validate
+        # it. Plone's own form authenticator remains enabled and required.
+        try:
+            from plone.protect.utils import safeWrite
+        except ImportError:
+            pass
+        else:
+            safeWrite(obj)
     return key
 
 
@@ -60,6 +69,26 @@ def _signature(obj, nonce, timestamp):
     user_id = getSecurityManager().getUser().getId() or "anonymous"
     body = f"{nonce}:{timestamp}:{user_id}".encode()
     return hmac.new(_key(obj), body, hashlib.sha256).hexdigest()
+
+
+def _plone_authenticator(obj, request, verify=False):
+    """Honor optional Plone protection before writes, not at response time."""
+    try:
+        from plone.protect.authenticator import check, createToken
+        from plone.protect.auto import getRoot, getRootKeyManager
+        from plone.keyring.interfaces import IKeyManager
+        from zope.component import queryUtility
+    except ImportError:
+        return ""
+    manager = queryUtility(IKeyManager)
+    if manager is None:
+        manager = getRootKeyManager(getRoot(obj))
+    if manager is None:
+        return ""
+    if verify:
+        check(request, manager=manager)
+        return ""
+    return '<input type="hidden" name="_authenticator" value="%s">' % escape(createToken(manager=manager))
 
 
 def csrf_field(obj, request):
@@ -76,7 +105,8 @@ def csrf_field(obj, request):
     timestamp = str(int(time.time()))
     token = timestamp + "." + _signature(obj, nonce, timestamp)
     request.RESPONSE.setHeader("Cache-Control", "no-store")
-    return f'<input type="hidden" name="csrf_token" value="{escape(token)}">'
+    return (f'<input type="hidden" name="csrf_token" value="{escape(token)}">'
+            + _plone_authenticator(obj, request))
 
 
 def require_post(obj, request):
@@ -92,6 +122,7 @@ def require_post(obj, request):
         valid = False
     if not valid:
         raise Forbidden("Invalid or expired form token; reload the form")
+    _plone_authenticator(obj, request, verify=True)
 
 
 def protect_forms(obj, request, html):

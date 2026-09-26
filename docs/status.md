@@ -1,5 +1,20 @@
 # Current verification status
 
+## Invitation development checkpoint, 2026-09-26
+
+Branch `feature/invitations` contains the verified `0.2.0a2` release source.
+169 local tests pass, including executable Script (Python) examples, optional
+storage repair and attempt limits that survive transaction aborts. Seven separate
+live PostgreSQL tests passed through Z SQL Methods and OpenODBCDA 1.1.1 on a
+disposable lab database. See the [living invitation task](task-script-provisioning-and-invitations.md)
+for evidence, transaction boundaries and remaining chapter 4/release gates.
+Chapter 4 HTTP verification now passes on Plone 6.2.2 / Zope 6.2 with the
+0.2.0a2 candidate: setup, invitation acceptance, CSRF rejection, replay rejection,
+normal login/TOTP and fallback access. Plone form-protection interoperability and
+ZMI permission editing were fixed during this test. The target remains active
+after restart; the temporary administrator was removed and test identity disabled.
+The existing managed authentication compatibility expectations below remain.
+
 ## 0.2.0a1 local verification
 
 - 126 tests pass on Python 3.13.0, Zope 6.1, PAS 4.1 and ZSQLMethods 5.1.
