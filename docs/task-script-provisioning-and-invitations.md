@@ -39,8 +39,9 @@ for the removed implementation. They are not the current transaction contract.
 See the [API transaction boundary](invitation-api.md#transaction-boundary-and-remaining-verification)
 for request ownership, no further SQL after commit request, and commit-time limits.
 
-The chapter 4 HTTP workflow has now passed, as recorded below. Remaining release
-work is final distribution verification, consolidation with main and alpha publication.
+The chapter 4 HTTP workflow has now passed, as recorded below. Distribution
+verification, consolidation with `main`, tagging and TestPyPI alpha publication
+are complete.
 Invitation workflows on other database/adapter combinations are not yet verified;
 this does not narrow the existing managed authentication compatibility scope.
 
@@ -48,9 +49,8 @@ The case-study chapter now describes the verified normal login/TOTP flow after
 acceptance and records the HTTP verification. Acceptance alone does not issue an
 authenticated browser session.
 
-Work is in progress on `feature/invitations`; the published `v0.2.0a1`
-artifacts remain unchanged. The feature is implemented on the development branch
-and the 0.2.0a2 candidate has been deployed to the chapter 4 application.
+The invitation work was merged through pull request 1 and released as
+`v0.2.0a2`. The earlier `v0.2.0a1` artifacts remain unchanged.
 
 First checkpoint implements the private SQL contract in `invitation_sql.py`:
 
@@ -87,15 +87,18 @@ changes without data or schema mutation. Chapter 4 HTTP verification is recorded
 
 ### Chapter 4 HTTP verification completed, 2026-09-26
 
-Installed candidate `0.2.0a2` from commit
-`2a198ad01e67c54bb5e6478b20363d6b3a8ca4db` on `192.168.0.74`, with
-OpenODBCDA 1.1.1, Plone 6.2.2, Zope 6.2 and PostgreSQL. The service is active and
-returns HTTP 200 after restart. No TestPyPI publication has occurred yet.
+The final walkthrough reset the earlier test setup and installed the published
+TestPyPI `0.2.0a2` wheel on `192.168.0.74`, with OpenODBCDA 1.1.1,
+Plone 6.2.2, Zope 6.2 and PostgreSQL. Its SHA-256 digest matched the GitHub
+release asset. The service is active and returns HTTP 200 after restart.
 
-Backups of ZODB, blobs and the initially empty `ordersystem` database are stored
-on that server under `/srv/plone/backups/sqluw-before-invitations`. The existing
-`ordersystem/orders_db` connector was reused. The wizard installed the four
-managed identity tables; invitation storage was enabled explicitly afterward.
+The original verification backup remains under
+`/srv/plone/backups/sqluw-before-invitations`. A fresh pre-reset backup of ZODB,
+blobs and PostgreSQL was created under
+`/srv/plone/backups/sqluw-chapter4-reset-20260926T021158Z`. The reset retained
+`/ordersystem`, `orders_db`, OpenODBCDA and root administrators. The existing
+connector was reused and invitations were enabled explicitly after ordinary
+user and fallback login checks passed.
 
 Actual HTTP tests passed for wizard/setup POSTs, manager invitation creation,
 anonymous inspection through a narrow proxy role, missing-CSRF rejection before
@@ -127,8 +130,11 @@ invitations revoked. Minimal application-owned example forms/scripts remain in
 The additional fallback account remains available; its generated password is in
 the protected server-local test credential record, never in Git.
 
-The final restart check confirmed anonymous inspection and fallback management
-still work after cleanup. Regression coverage now totals 169 local tests.
+The fresh published-package walkthrough again passed manager creation,
+anonymous inspection, missing-CSRF rejection, acceptance without automatic
+login, replay rejection, normal login, TOTP enrollment, protected-page access,
+ordinary login and fallback administration. Human phone scanning and visual
+usability remain untested. Regression coverage totals 169 local tests.
 
 ### Release preparation checkpoint, 2026-09-26
 
@@ -140,8 +146,9 @@ still work after cleanup. Regression coverage now totals 169 local tests.
 - Added and executed [application script examples](invitation-script-examples.md).
 - Added repair tests for missing SQL methods, preservation of data/schema and
   rejection of silent policy changes.
-- Candidate metadata now identifies `0.2.0a2`; publication is pending. Published
-  TestPyPI artifacts still identify `0.2.0a1`.
+- Version `0.2.0a2` was merged to `main`, tagged, released on GitHub and
+  published to TestPyPI through trusted publishing. The published wheel and
+  source archive hashes match the verified GitHub release assets.
 - Chapter 4 access has been recovered and verified using the existing local
   `~/.codex/scripts/invoke-ordersystemlab-sudo.ps1` helper (its RemoteScriptPath
   parameter accepts a local UTF-8 shell script with LF line endings). Credentials
@@ -151,7 +158,7 @@ still work after cleanup. Regression coverage now totals 169 local tests.
   adapter has since been updated to 1.1.1 from PyPI with dependencies unchanged.
   Plone was restarted successfully; the service is active and the local HTTP
   endpoint returns 200. All three explicit transaction methods import correctly.
-  SQLUserWizard has since been updated to the tested 0.2.0a2 candidate above.
+  SQLUserWizard has since been replaced by the published 0.2.0a2 wheel above.
   Do not record the earlier isolated SQL tests as this deployment.
 
 ### Script permissions and setup checkpoint
@@ -166,8 +173,8 @@ still work after cleanup. Regression coverage now totals 169 local tests.
 - Added [development API documentation](invitation-api.md). Zope 5 wrapper
   confirmation and complete application examples remain pending.
 
-No server changes or publication are part of this checkpoint. Package version
-selection remains pending until the feature's compatibility scope is finalized.
+This checkpoint is included in release `0.2.0a2`. Confirmation on Zope 5 and
+additional live database/adapter combinations remains separate follow-up work.
 
 ## Starting state
 

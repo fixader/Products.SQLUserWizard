@@ -1,7 +1,7 @@
-# Invitation API (development branch)
+# Invitation API
 
-This API is under development on `feature/invitations`, not part of the published
-0.2.0a1 package. The optional workflow product is described
+This API is included in the published `0.2.0a2` alpha. The optional workflow
+product is described
 [separately](task-optional-invitation-product.md).
 
 ## Explicit setup

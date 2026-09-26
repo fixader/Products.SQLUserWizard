@@ -2,14 +2,15 @@
 
 ## Invitation development checkpoint, 2026-09-26
 
-Branch `feature/invitations` contains the verified `0.2.0a2` release source.
+Release `v0.2.0a2` contains the verified invitation implementation and is
+published on TestPyPI.
 169 local tests pass, including executable Script (Python) examples, optional
 storage repair and attempt limits that survive transaction aborts. Seven separate
 live PostgreSQL tests passed through Z SQL Methods and OpenODBCDA 1.1.1 on a
 disposable lab database. See the [living invitation task](task-script-provisioning-and-invitations.md)
 for evidence, transaction boundaries and remaining chapter 4/release gates.
 Chapter 4 HTTP verification now passes on Plone 6.2.2 / Zope 6.2 with the
-0.2.0a2 candidate: setup, invitation acceptance, CSRF rejection, replay rejection,
+published 0.2.0a2 wheel: setup, invitation acceptance, CSRF rejection, replay rejection,
 normal login/TOTP and fallback access. Plone form-protection interoperability and
 ZMI permission editing were fixed during this test. The target remains active
 after restart; the temporary administrator was removed and test identity disabled.
@@ -98,9 +99,9 @@ any database calls; three regression cases cover this guard.
 
 ## Release artifacts
 
-- Built wheel and source distribution for 0.2.0a1 using an isolated build.
+- Built wheel and source distribution for 0.2.0a2 using an isolated build.
 - Both artifacts pass `twine check --strict`.
-- All 126 tests also pass from the unpacked source distribution, including the
+- All 169 tests also pass from the unpacked source distribution, including the
   frozen legacy fixture. Wheel product modules match the current source files.
 - Source distribution includes upgrade documentation and test fixtures.
 - Build reports setuptools deprecation warnings for legacy license metadata.
@@ -109,10 +110,18 @@ any database calls; three regression cases cover this guard.
   the minimum Python/build backend versions.
 - Source modules also parse with Python 3.8 grammar; this does not substitute
   for runtime testing on Python 3.8 / Zope 5.
-- Code and documentation are consolidated on `main` for release `v0.2.0a1`.
-  PyPI upload is a separate publication step, not implied by the GitHub release.
+- Code and documentation are consolidated on `main` for release `v0.2.0a2`.
+  The earlier `v0.2.0a1` artifacts remain available unchanged.
 
 ## TestPyPI publication
+
+Version [0.2.0a2](https://test.pypi.org/project/Products.SQLUserWizard/0.2.0a2/)
+was published as an alpha on 2026-09-26 through GitHub Actions trusted
+publishing. The published wheel and source archive SHA-256 hashes match the
+GitHub prerelease assets. The published wheel was installed on the clean-reset
+chapter 4 lab and the complete invitation/login/TOTP/fallback flow passed. The
+[publication run](https://github.com/fixader/Products.SQLUserWizard/actions/runs/36210732104)
+completed successfully.
 
 Version [0.2.0a1](https://test.pypi.org/project/Products.SQLUserWizard/0.2.0a1/)
 was published as an alpha on 2026-09-25 using GitHub Actions trusted publishing.
